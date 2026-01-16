@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { 
-  LayoutDashboard, Truck, History, Settings, Package, Menu, X, Database, LogOut, CheckCircle, Edit, Trash2
+  LayoutDashboard, Truck, History, Settings, Package, Menu, X, Database, LogOut, CheckCircle, Edit, Trash2,
+  Search, Plus, Upload, Download, FileSpreadsheet
 } from 'lucide-react';
 import { Tire, Transaction, Vehicle, ViewState, VEHICLE_GROUPS, VEHICLE_TYPES } from './types';
 import { dataService } from './services/dataService';
@@ -57,7 +59,7 @@ function App() {
       case 'transactions':
         return <TransactionHistory transactions={transactions} />;
       case 'vehicles':
-        return <VehicleList vehicles={vehicles} onRefresh={refreshData} />;
+        return <VehicleList vehicles={vehicles} onRefresh={() => {refreshData(); showNotification("Data kendaraan diperbarui");}} />;
       case 'settings':
         return <SettingsView onRestore={refreshData} />;
       default:
@@ -230,33 +232,16 @@ const TransactionHistory = ({ transactions }: { transactions: Transaction[] }) =
 };
 
 const VehicleList = ({ vehicles, onRefresh }: { vehicles: Vehicle[], onRefresh: () => void }) => {
-   const [form, setForm] = useState({
-      plateNumber: '',
-      driver: '',
-      vehicleType: VEHICLE_TYPES[0],
-      department: VEHICLE_GROUPS[0]
-   });
-
-   // Edit state
+   const [searchTerm, setSearchTerm] = useState('');
+   const [isFormOpen, setIsFormOpen] = useState(false);
    const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
-   // Delete confirmation state
    const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+   const fileInputRef = useRef<HTMLInputElement>(null);
 
-   const handleAdd = () => {
-      if(!form.plateNumber) return;
-      const v: Vehicle = {
-          id: Date.now(),
-          plateNumber: form.plateNumber.toUpperCase(),
-          vehicleType: form.vehicleType,
-          department: form.department,
-          driver: form.driver,
-          status: 'active',
-          tireHistory: []
-      }
-      dataService.saveVehicle(v);
-      setForm({ plateNumber: '', driver: '', vehicleType: VEHICLE_TYPES[0], department: VEHICLE_GROUPS[0] });
-      onRefresh();
-   }
+   const filteredVehicles = vehicles.filter(v => 
+      v.plateNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      v.driver.toLowerCase().includes(searchTerm.toLowerCase())
+   );
 
    const handleDeleteClick = (id: number) => {
        setConfirmDeleteId(id);
@@ -270,73 +255,177 @@ const VehicleList = ({ vehicles, onRefresh }: { vehicles: Vehicle[], onRefresh: 
        }
    }
 
+   // --- Export Excel ---
+   const handleExportExcel = () => {
+      const dataToExport = filteredVehicles.map(v => ({
+         'Plat Nomor': v.plateNumber,
+         'Supir': v.driver,
+         'Tipe': v.vehicleType,
+         'Departemen': v.department,
+         'Ban Terakhir': v.tireHistory.length > 0 ? v.tireHistory[v.tireHistory.length-1].serialNumber : '-',
+         'Status': v.status
+      }));
+      const ws = XLSX.utils.json_to_sheet(dataToExport);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Data Kendaraan");
+      XLSX.writeFile(wb, "Data_Kendaraan_Kerinci.xlsx");
+   };
+
+   // --- Download Template ---
+   const handleDownloadTemplate = () => {
+      const headers = [['Plat Nomor', 'Nama Supir', 'Tipe (FAW/FUSO)', 'Departemen']];
+      const ws = XLSX.utils.aoa_to_sheet(headers);
+      XLSX.utils.sheet_add_json(ws, [
+         {'Plat Nomor': 'B 1234 ABC', 'Nama Supir': 'Contoh Supir', 'Tipe (FAW/FUSO)': 'FUSO', 'Departemen': 'RKI'}
+      ], {skipHeader: true, origin: "A2"});
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Template Kendaraan");
+      XLSX.writeFile(wb, "Template_Import_Kendaraan.xlsx");
+   };
+
+   // --- Import Excel ---
+   const handleImportClick = () => {
+      if(fileInputRef.current) fileInputRef.current.click();
+   };
+
+   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+          const bstr = evt.target?.result;
+          if (!bstr) return;
+
+          try {
+              const wb = XLSX.read(bstr, { type: 'binary' });
+              const ws = wb.Sheets[wb.SheetNames[0]];
+              const data = XLSX.utils.sheet_to_json(ws);
+              
+              let count = 0;
+              data.forEach((row: any) => {
+                 const plat = row['Plat Nomor'] || row['plateNumber'];
+                 if(plat) {
+                     // Check existing to avoid duplicates (optional, here we allow update if exists or skip)
+                     // Simple implementation: Just add/update based on Plate
+                     const existing = vehicles.find(v => v.plateNumber === plat.toUpperCase());
+                     const v: Vehicle = {
+                         id: existing ? existing.id : Date.now() + Math.random(),
+                         plateNumber: plat.toUpperCase(),
+                         driver: row['Nama Supir'] || row['driver'] || '',
+                         vehicleType: row['Tipe (FAW/FUSO)'] || row['vehicleType'] || VEHICLE_TYPES[0],
+                         department: row['Departemen'] || row['department'] || VEHICLE_GROUPS[0],
+                         status: 'active',
+                         tireHistory: existing ? existing.tireHistory : []
+                     };
+                     dataService.saveVehicle(v);
+                     count++;
+                 }
+              });
+              alert(`Berhasil import ${count} data kendaraan.`);
+              onRefresh();
+          } catch(err) {
+              console.error(err);
+              alert("Gagal import file.");
+          } finally {
+              if(fileInputRef.current) fileInputRef.current.value = '';
+          }
+      };
+      reader.readAsBinaryString(file);
+   };
+
    return (
     <div className="space-y-6">
-       <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 no-print">
-          <h3 className="text-lg font-bold text-white mb-4">Tambah Kendaraan Baru</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-             <input 
-               type="text" 
-               placeholder="Plat Nomor" 
-               className="bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white uppercase"
-               value={form.plateNumber} onChange={e => setForm({...form, plateNumber: e.target.value})}
-             />
-             <input 
-               type="text" 
-               placeholder="Nama Supir" 
-               className="bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white"
-               value={form.driver} onChange={e => setForm({...form, driver: e.target.value})}
-             />
-             <select 
-               className="bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white"
-               value={form.vehicleType} onChange={e => setForm({...form, vehicleType: e.target.value})}
-             >
-                {VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-             </select>
-             <select 
-                className="bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white"
-                value={form.department} onChange={e => setForm({...form, department: e.target.value})}
-             >
-                {VEHICLE_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
-             </select>
-             <button onClick={handleAdd} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium">
-                Tambah
+       {/* Hidden File Input */}
+       <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".xlsx, .xls" />
+
+       {/* Toolbar */}
+       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md no-print">
+          <div className="relative flex-1 w-full md:max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <input 
+              type="text" 
+              placeholder="Cari Plat Nomor / Supir..." 
+              className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </div>
+          
+          <div className="flex flex-wrap gap-2 w-full md:w-auto">
+             <button onClick={() => {setEditingVehicle(null); setIsFormOpen(true);}} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                <Plus size={16} /> Tambah
+             </button>
+             <button onClick={handleImportClick} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                <Upload size={16} /> Import
+             </button>
+             <button onClick={handleExportExcel} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                <FileSpreadsheet size={16} /> Export
+             </button>
+             <button onClick={handleDownloadTemplate} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-2 rounded-lg" title="Download Template">
+                <Download size={18} />
              </button>
           </div>
        </div>
 
-       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 print:block print:space-y-4">
-          {vehicles.map(v => (
-             <div key={v.id} className="bg-slate-800 border border-slate-700 p-4 rounded-xl group relative print:bg-white print:border-slate-300 print:text-black print:mb-4 print:break-inside-avoid">
-                <div className="flex justify-between items-start">
-                   <h3 className="text-xl font-bold text-white font-mono print:text-black">{v.plateNumber}</h3>
-                   <div className="flex items-center gap-2 no-print">
-                      <span className="bg-slate-700 text-slate-300 text-xs px-2 py-1 rounded">{v.department}</span>
-                      <button onClick={(e) => { e.stopPropagation(); setEditingVehicle(v); }} className="p-1 hover:bg-slate-700 rounded text-blue-400" title="Edit"><Edit size={16}/></button>
-                      <button onClick={(e) => { e.stopPropagation(); handleDeleteClick(v.id); }} className="p-1 hover:bg-slate-700 rounded text-red-400" title="Hapus"><Trash2 size={16}/></button>
-                   </div>
-                </div>
-                <div className="mt-2 text-sm">
-                  <p className="text-slate-400 print:text-slate-700">Driver: <span className="text-white print:text-black">{v.driver || '-'}</span></p>
-                  <p className="text-slate-400 print:text-slate-700">Tipe: <span className="text-white print:text-black">{v.vehicleType || '-'}</span></p>
-                  <p className="text-slate-400 print:text-slate-700 print:block hidden">Dept: <span className="text-white print:text-black">{v.department}</span></p>
-                </div>
-                <div className="mt-4 pt-4 border-t border-slate-700 print:border-slate-300">
-                   <p className="text-xs text-slate-500 print:text-slate-600">Ban Terpasang Terakhir:</p>
-                   {v.tireHistory.length > 0 ? (
-                      <p className="text-sm text-white font-mono mt-1 print:text-black">{v.tireHistory[v.tireHistory.length-1].serialNumber}</p>
-                   ) : <p className="text-sm text-slate-600 italic">Belum ada history</p>}
-                </div>
-             </div>
-          ))}
+       {/* List View (Table) */}
+       <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden">
+         <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-300">
+               <thead className="bg-slate-900 text-slate-400 uppercase font-medium">
+                  <tr>
+                     <th className="px-6 py-4">Plat Nomor</th>
+                     <th className="px-6 py-4">Supir</th>
+                     <th className="px-6 py-4">Tipe & Dept</th>
+                     <th className="px-6 py-4">Ban Terakhir</th>
+                     <th className="px-6 py-4 text-center">Aksi</th>
+                  </tr>
+               </thead>
+               <tbody className="divide-y divide-slate-700">
+                  {filteredVehicles.length > 0 ? filteredVehicles.map(v => (
+                     <tr key={v.id} className="hover:bg-slate-750 transition-colors">
+                        <td className="px-6 py-4 font-mono font-bold text-white">{v.plateNumber}</td>
+                        <td className="px-6 py-4">{v.driver || '-'}</td>
+                        <td className="px-6 py-4">
+                           <div className="flex flex-col">
+                              <span className="text-white">{v.vehicleType}</span>
+                              <span className="text-xs text-slate-500 bg-slate-900 px-1 py-0.5 rounded w-fit mt-1">{v.department}</span>
+                           </div>
+                        </td>
+                        <td className="px-6 py-4">
+                           {v.tireHistory.length > 0 ? (
+                              <div className="flex items-center gap-1 text-emerald-400 font-mono">
+                                 <CheckCircle size={14}/> {v.tireHistory[v.tireHistory.length-1].serialNumber}
+                              </div>
+                           ) : <span className="text-slate-600 italic">Belum ada</span>}
+                        </td>
+                        <td className="px-6 py-4">
+                           <div className="flex justify-center gap-2">
+                              <button onClick={() => {setEditingVehicle(v); setIsFormOpen(true);}} className="p-1.5 hover:bg-slate-700 rounded text-blue-400" title="Edit"><Edit size={16}/></button>
+                              <button onClick={() => handleDeleteClick(v.id)} className="p-1.5 hover:bg-slate-700 rounded text-red-400" title="Hapus"><Trash2 size={16}/></button>
+                           </div>
+                        </td>
+                     </tr>
+                  )) : (
+                     <tr>
+                        <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                           Tidak ada data kendaraan yang ditemukan.
+                        </td>
+                     </tr>
+                  )}
+               </tbody>
+            </table>
+         </div>
        </div>
 
-       {editingVehicle && (
-         <VehicleEditModal 
+       {/* Combined Add/Edit Modal */}
+       {isFormOpen && (
+         <VehicleFormModal 
             vehicle={editingVehicle}
-            onClose={() => setEditingVehicle(null)}
+            onClose={() => {setIsFormOpen(false); setEditingVehicle(null);}}
             onSave={(updated) => {
                dataService.saveVehicle(updated);
+               setIsFormOpen(false);
                setEditingVehicle(null);
                onRefresh();
             }}
@@ -354,29 +443,41 @@ const VehicleList = ({ vehicles, onRefresh }: { vehicles: Vehicle[], onRefresh: 
    );
 };
 
-const VehicleEditModal = ({ vehicle, onClose, onSave }: { vehicle: Vehicle, onClose: () => void, onSave: (v: Vehicle) => void }) => {
-  const [form, setForm] = useState(vehicle);
+// Reused for Add and Edit
+const VehicleFormModal = ({ vehicle, onClose, onSave }: { vehicle: Vehicle | null, onClose: () => void, onSave: (v: Vehicle) => void }) => {
+  const [form, setForm] = useState<Vehicle>(vehicle || {
+      id: Date.now(),
+      plateNumber: '',
+      driver: '',
+      vehicleType: VEHICLE_TYPES[0],
+      department: VEHICLE_GROUPS[0],
+      status: 'active',
+      tireHistory: []
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if(!form.plateNumber) return;
     onSave(form);
   };
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[55] backdrop-blur-sm p-4 no-print">
-      <div className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg border border-slate-700">
+      <div className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg border border-slate-700 animate-fade-in">
         <div className="flex justify-between items-center p-6 border-b border-slate-700">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
-            <Edit className="text-blue-500" /> Edit Kendaraan
+            {vehicle ? <Edit className="text-blue-500" /> : <Plus className="text-emerald-500" />} 
+            {vehicle ? 'Edit Kendaraan' : 'Tambah Kendaraan Baru'}
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24}/></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1">Plat Nomor</label>
+            <label className="block text-sm font-medium text-slate-400 mb-1">Plat Nomor *</label>
             <input 
               type="text" 
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white uppercase"
+              required
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white uppercase font-mono tracking-wider focus:ring-2 focus:ring-blue-500"
               value={form.plateNumber}
               onChange={e => setForm({...form, plateNumber: e.target.value.toUpperCase()})}
             />
@@ -385,34 +486,38 @@ const VehicleEditModal = ({ vehicle, onClose, onSave }: { vehicle: Vehicle, onCl
             <label className="block text-sm font-medium text-slate-400 mb-1">Nama Supir</label>
             <input 
               type="text" 
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white"
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500"
               value={form.driver}
               onChange={e => setForm({...form, driver: e.target.value})}
             />
           </div>
-           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1">Jenis Mobil</label>
-            <select 
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white"
-              value={form.vehicleType}
-              onChange={e => setForm({...form, vehicleType: e.target.value})}
-            >
-               {VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1">Departemen</label>
-             <select 
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white"
-                value={form.department} onChange={e => setForm({...form, department: e.target.value})}
-             >
-                {VEHICLE_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
-             </select>
+          <div className="grid grid-cols-2 gap-4">
+             <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Jenis Mobil</label>
+                <select 
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500"
+                  value={form.vehicleType}
+                  onChange={e => setForm({...form, vehicleType: e.target.value})}
+                >
+                   {VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+             </div>
+             <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Departemen</label>
+                 <select 
+                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500"
+                    value={form.department} onChange={e => setForm({...form, department: e.target.value})}
+                 >
+                    {VEHICLE_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+                 </select>
+             </div>
           </div>
           
           <div className="pt-4 flex justify-end gap-3">
              <button type="button" onClick={onClose} className="px-4 py-2 text-slate-300 hover:text-white">Batal</button>
-             <button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">Simpan</button>
+             <button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
+                 {vehicle ? 'Simpan Perubahan' : 'Tambah Kendaraan'}
+             </button>
           </div>
         </form>
       </div>
