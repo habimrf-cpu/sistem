@@ -1,0 +1,7 @@
+{
+  "name": "Ban",
+  "description": "A comprehensive Warehouse Management System for tire stock management, featuring tracking, analytics, and QR code integration. Developed by Habifeb.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
