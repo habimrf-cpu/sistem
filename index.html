@@ -46,25 +46,48 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #64748b; 
       }
-      .print-area { display: none; }
+      
       @media print {
-        body * { visibility: hidden; }
-        .print-area, .print-area * { visibility: visible; display: block; position: absolute; left: 0; top: 0; width: 100%; }
-        .no-print { display: none !important; }
+        body { 
+            background-color: white; 
+            color: black; 
+        }
+        .no-print, nav, aside, header, button { 
+            display: none !important; 
+        }
+        /* Make table look like a real document */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10pt;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            color: black !important;
+        }
+        th {
+            background-color: #f2f2f2 !important;
+            font-weight: bold;
+        }
+        /* Hide scrollbars */
+        div {
+            overflow: visible !important;
+        }
       }
     </style>
   <script type="importmap">
 {
   "imports": {
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "jspdf": "https://esm.sh/jspdf@^4.0.0",
-    "xlsx": "https://esm.sh/xlsx@^0.18.5",
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "jspdf-autotable": "https://esm.sh/jspdf-autotable@^5.0.7"
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "xlsx": "https://esm.sh/xlsx@^0.18.5",
+    "jspdf": "https://esm.sh/jspdf@^4.0.0",
+    "jspdf-autotable": "https://esm.sh/jspdf-autotable@^5.0.7",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>

@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Tire, Vehicle, SIZE_OPTIONS, Transaction } from '../types';
 import { 
   Search, Eye, Edit, Trash2, QrCode, Plus, ArrowUpRight, ArrowDownRight, 
-  X, AlertTriangle, FileSpreadsheet, Printer, Archive, Save 
+  X, AlertTriangle, FileSpreadsheet, Printer, Archive, Save, Upload, Download
 } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import { ConfirmationModal } from './ConfirmationModal';
@@ -32,6 +32,9 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
   
   // Delete confirmation state
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  
+  // File Input Ref for Import
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Filter Logic
   const filteredData = useMemo(() => {
@@ -64,6 +67,12 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
     }
   };
 
+  // --- Print Functionality (Browser Print) ---
+  const handlePrintPage = () => {
+    window.print();
+  };
+
+  // --- Export Excel ---
   const handleExportExcel = () => {
     const ws = XLSX.utils.json_to_sheet(filteredData.map(t => ({
       ...t,
@@ -75,6 +84,7 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
     XLSX.writeFile(wb, "Data_Stok_Ban_Habifeb.xlsx");
   };
 
+  // --- Export PDF ---
   const handleExportPDF = () => {
     const doc = new jsPDF();
     doc.text("Laporan Stok Ban - Bengkel Kerinci", 14, 15);
@@ -92,10 +102,98 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
     doc.save("Laporan_Stok_Ban.pdf");
   };
 
+  // --- Download Template ---
+  const handleDownloadTemplate = () => {
+    const headers = [
+       ['Nomor Seri', 'Ukuran', 'Merk', 'Kondisi', 'Tanggal Masuk (YYYY-MM-DD)']
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(headers);
+    // Add example row
+    XLSX.utils.sheet_add_json(ws, [
+       {'Nomor Seri': 'SN-CONTOH-01', 'Ukuran': SIZE_OPTIONS[0], 'Merk': 'Bridgestone', 'Kondisi': 'Baru', 'Tanggal Masuk (YYYY-MM-DD)': '2024-01-01'}
+    ], {skipHeader: true, origin: "A2"});
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template Import");
+    XLSX.writeFile(wb, "Template_Import_Ban.xlsx");
+  };
+
+  // --- Import Excel ---
+  const handleImportClick = () => {
+    if (fileInputRef.current) {
+        fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+        const bstr = evt.target?.result;
+        if (!bstr) return;
+
+        try {
+            const wb = XLSX.read(bstr, { type: 'binary' });
+            const wsname = wb.SheetNames[0];
+            const ws = wb.Sheets[wsname];
+            const data = XLSX.utils.sheet_to_json(ws);
+            
+            let successCount = 0;
+            let failCount = 0;
+
+            data.forEach((row: any) => {
+                const sn = row['Nomor Seri'] || row['serialNumber'];
+                
+                // Basic Validation
+                if (sn && dataService.isSerialUnique(sn)) {
+                    const newTire: Tire = {
+                        id: Date.now() + Math.random(),
+                        serialNumber: String(sn).toUpperCase(),
+                        brand: row['Merk'] || '-',
+                        size: row['Ukuran'] || SIZE_OPTIONS[0],
+                        condition: row['Kondisi'] || 'Baru',
+                        status: 'available',
+                        location: 'Bengkel Krc',
+                        dateIn: row['Tanggal Masuk (YYYY-MM-DD)'] || new Date().toISOString().split('T')[0],
+                        createdBy: 'Import',
+                        updatedAt: Date.now()
+                    };
+                    dataService.saveTire(newTire);
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            });
+
+            alert(`Import Selesai.\nBerhasil: ${successCount}\nGagal/Duplikat: ${failCount}`);
+            onRefresh();
+
+        } catch (error) {
+            console.error(error);
+            alert("Gagal membaca file Excel. Pastikan format sesuai template.");
+        } finally {
+            // Reset input
+            if(fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+    reader.readAsBinaryString(file);
+  };
+
   return (
     <div className="space-y-6">
-      {/* Header & Controls */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
+      {/* Hidden File Input */}
+      <input 
+        type="file" 
+        accept=".xlsx, .xls" 
+        ref={fileInputRef} 
+        onChange={handleFileChange} 
+        className="hidden" 
+      />
+
+      {/* Header & Controls (Hidden when printing) */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md no-print">
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
            <div className="relative flex-1 md:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
@@ -135,49 +233,68 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
           <button onClick={() => setShowModal('out')} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
             <ArrowUpRight size={16} /> Ban Keluar
           </button>
+          
            <div className="dropdown relative group">
               <button className="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-slate-300">
                 <Printer size={20} />
               </button>
-              <div className="hidden group-hover:block absolute right-0 mt-2 w-48 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-10">
+              <div className="hidden group-hover:block absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-10">
+                <button onClick={handlePrintPage} className="flex items-center gap-2 w-full px-4 py-3 text-sm text-white font-bold hover:bg-slate-700 text-left border-b border-slate-700">
+                  <Printer size={16}/> Cetak (Print)
+                </button>
+                <div className="p-2 text-xs text-slate-500 uppercase font-bold">Import / Export</div>
+                <button onClick={handleImportClick} className="flex items-center gap-2 w-full px-4 py-2 text-sm text-emerald-400 hover:bg-slate-700 text-left">
+                  <Upload size={16}/> Import Excel
+                </button>
+                <button onClick={handleDownloadTemplate} className="flex items-center gap-2 w-full px-4 py-2 text-sm text-slate-400 hover:bg-slate-700 text-left">
+                  <Download size={16}/> Template Import
+                </button>
+                 <div className="border-t border-slate-700 my-1"></div>
                 <button onClick={handleExportExcel} className="flex items-center gap-2 w-full px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 text-left">
                   <FileSpreadsheet size={16}/> Export Excel
                 </button>
                 <button onClick={handleExportPDF} className="flex items-center gap-2 w-full px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 text-left">
-                  <Printer size={16}/> Print PDF
+                  <Printer size={16}/> Export PDF
                 </button>
               </div>
            </div>
         </div>
       </div>
 
+      {/* Print Header (Only visible when printing) */}
+      <div className="hidden print:block mb-8 text-black">
+        <h1 className="text-2xl font-bold">Laporan Stok Ban - Bengkel Kerinci</h1>
+        <p className="text-sm">Dicetak pada: {new Date().toLocaleDateString('id-ID')} {new Date().toLocaleTimeString('id-ID')}</p>
+        <div className="border-b-2 border-black mt-2"></div>
+      </div>
+
       {/* Table */}
-      <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden">
+      <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden print:shadow-none print:border-none print:bg-white">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="bg-slate-900 text-slate-400 uppercase font-medium">
+          <table className="w-full text-left text-sm text-slate-300 print:text-black">
+            <thead className="bg-slate-900 text-slate-400 uppercase font-medium print:bg-slate-200 print:text-black">
               <tr>
                 <th className="px-6 py-4">Nomor Seri</th>
                 <th className="px-6 py-4">Ukuran</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4">Lokasi/Plat</th>
                 <th className="px-6 py-4">Tanggal</th>
-                <th className="px-6 py-4 text-center">Aksi</th>
+                <th className="px-6 py-4 text-center no-print">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700">
+            <tbody className="divide-y divide-slate-700 print:divide-slate-300">
               {currentData.length > 0 ? currentData.map((tire) => (
-                <tr key={tire.id} className="hover:bg-slate-750 transition-colors">
-                  <td className="px-6 py-4 font-mono font-medium text-white">
+                <tr key={tire.id} className="hover:bg-slate-750 transition-colors print:hover:bg-transparent">
+                  <td className="px-6 py-4 font-mono font-medium text-white print:text-black">
                     {tire.serialNumber}
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-sm text-slate-300">{tire.size}</div>
+                    <div className="text-sm text-slate-300 print:text-black">{tire.size}</div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col gap-1">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium w-fit ${
-                        tire.status === 'available' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-orange-500/10 text-orange-500'
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium w-fit print:border print:border-black ${
+                        tire.status === 'available' ? 'bg-emerald-500/10 text-emerald-500 print:text-black' : 'bg-orange-500/10 text-orange-500 print:text-black'
                       }`}>
                         {tire.status === 'available' ? 'Tersedia' : 'Keluar'}
                       </span>
@@ -185,16 +302,16 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
                   </td>
                   <td className="px-6 py-4">
                      {tire.status === 'available' ? (
-                        <span className="text-slate-400 flex items-center gap-1"><Archive size={14}/> Bengkel Krc</span>
+                        <span className="text-slate-400 flex items-center gap-1 print:text-black"><Archive size={14} className="no-print"/> Bengkel Krc</span>
                      ) : (
-                        <span className="text-orange-400 font-mono">{tire.plateNumber}</span>
+                        <span className="text-orange-400 font-mono print:text-black">{tire.plateNumber}</span>
                      )}
                   </td>
                   <td className="px-6 py-4 text-xs">
                     <div>Masuk: {tire.dateIn}</div>
-                    {tire.dateOut && <div className="text-orange-400">Keluar: {tire.dateOut}</div>}
+                    {tire.dateOut && <div className="text-orange-400 print:text-black">Keluar: {tire.dateOut}</div>}
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 no-print">
                     <div className="flex justify-center gap-2">
                       <button onClick={() => {setSelectedTire(tire); setShowModal('detail');}} className="p-1.5 hover:bg-slate-700 rounded text-blue-400" title="Detail"><Eye size={16}/></button>
                       <button onClick={() => {setSelectedTire(tire); setShowModal('edit');}} className="p-1.5 hover:bg-slate-700 rounded text-amber-400" title="Edit Serial Number"><Edit size={16}/></button>
@@ -214,8 +331,8 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
           </table>
         </div>
         
-        {/* Pagination */}
-        <div className="px-6 py-4 border-t border-slate-700 flex justify-between items-center">
+        {/* Pagination (Hidden on print) */}
+        <div className="px-6 py-4 border-t border-slate-700 flex justify-between items-center no-print">
           <span className="text-xs text-slate-500">Hal {currentPage} dari {totalPages || 1}</span>
           <div className="flex gap-1">
             <button 
@@ -342,7 +459,7 @@ const TireFormModal: React.FC<{ type: 'in', onClose: () => void, onSave: (t: Tir
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm p-4 no-print">
       <div className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg border border-slate-700">
         <div className="flex justify-between items-center p-6 border-b border-slate-700">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -422,7 +539,7 @@ const TireEditModal: React.FC<{ tire: Tire, onClose: () => void, onSave: (t: Tir
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm p-4 no-print">
       <div className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm border border-slate-700">
         <div className="flex justify-between items-center p-6 border-b border-slate-700">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -500,7 +617,7 @@ const TireOutModal: React.FC<{ tires: Tire[], vehicles: Vehicle[], onClose: () =
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm p-4 no-print">
       <div className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg border border-slate-700">
         <div className="flex justify-between items-center p-6 border-b border-slate-700">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -564,7 +681,7 @@ const TireOutModal: React.FC<{ tires: Tire[], vehicles: Vehicle[], onClose: () =
 
 const TireDetailModal: React.FC<{ tire: Tire, onClose: () => void }> = ({ tire, onClose }) => {
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm p-4 no-print">
       <div className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl border border-slate-700">
         <div className="flex justify-between items-center p-6 border-b border-slate-700">
            <h3 className="text-xl font-bold text-white">Detail Ban</h3>
@@ -631,7 +748,7 @@ const QRModal: React.FC<{ tire: Tire, onClose: () => void }> = ({ tire, onClose 
    };
 
    return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm">
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm no-print">
        <div className="bg-slate-800 p-8 rounded-xl flex flex-col items-center gap-4 border border-slate-700">
           <h3 className="text-white text-lg font-bold">QR Code Ban</h3>
           <div className="bg-white p-4 rounded-lg">

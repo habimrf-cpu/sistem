@@ -7,6 +7,7 @@ import { dataService } from './services/dataService';
 import { Dashboard } from './components/Dashboard';
 import { TireManager } from './components/TireComponents';
 import { ConfirmationModal } from './components/ConfirmationModal';
+import { Logo } from './components/Logo';
 
 function App() {
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
@@ -84,9 +85,9 @@ function App() {
       
       {/* Toast Notification */}
       {notification && (
-        <div className={`fixed top-6 right-6 z-50 px-6 py-3 rounded-lg shadow-xl flex items-center gap-2 animate-bounce ${
+        <div className={`fixed top-6 right-6 z-[100] px-6 py-3 rounded-lg shadow-xl flex items-center gap-2 animate-bounce ${
             notification.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
-        }`}>
+        } no-print`}>
             {notification.type === 'success' ? <CheckCircle size={20} /> : <X size={20} />}
             {notification.message}
         </div>
@@ -95,7 +96,7 @@ function App() {
       {/* Sidebar Mobile Overlay */}
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-20 lg:hidden backdrop-blur-sm"
+          className="fixed inset-0 bg-black/50 z-20 lg:hidden backdrop-blur-sm no-print"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
@@ -103,14 +104,12 @@ function App() {
       {/* Sidebar */}
       <aside className={`
         fixed lg:static inset-y-0 left-0 z-30 w-64 bg-slate-950 border-r border-slate-800 
-        transform transition-transform duration-300 ease-in-out
+        transform transition-transform duration-300 ease-in-out no-print
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="h-full flex flex-col">
           <div className="p-6 border-b border-slate-800 flex items-center gap-3">
-             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-               <Database className="text-white" size={18} />
-             </div>
+             <Logo className="w-10 h-10 text-blue-500" />
              <div>
                <h1 className="text-lg font-bold text-white tracking-tight">Bengkel Kerinci</h1>
                <p className="text-xs text-slate-500">Inventory System</p>
@@ -138,20 +137,23 @@ function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+      <main className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-900">
         {/* Mobile Header */}
-        <header className="lg:hidden h-16 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 z-10">
+        <header className="lg:hidden h-16 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 z-10 no-print">
            <button onClick={() => setIsSidebarOpen(true)} className="text-slate-300">
              <Menu size={24} />
            </button>
-           <span className="font-bold text-white">Bengkel Kerinci</span>
+           <div className="flex items-center gap-2">
+              <Logo className="w-6 h-6" />
+              <span className="font-bold text-white">Bengkel Kerinci</span>
+           </div>
            <div className="w-6" /> 
         </header>
 
         {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
-           <div className="max-w-7xl mx-auto pb-10">
-              <div className="mb-6 flex justify-between items-end">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 print:p-0 print:overflow-visible">
+           <div className="max-w-7xl mx-auto pb-10 print:pb-0 print:max-w-none">
+              <div className="mb-6 flex justify-between items-end no-print">
                 <div>
                    <h2 className="text-2xl font-bold text-white capitalize">
                       {activeView === 'stock' ? 'Manajemen Stok Ban' : 
@@ -173,7 +175,7 @@ function App() {
            </div>
            
            {/* Watermark Footer */}
-           <div className="mt-auto py-6 text-center text-xs text-slate-600 border-t border-slate-800/50">
+           <div className="mt-auto py-6 text-center text-xs text-slate-600 border-t border-slate-800/50 no-print">
              &copy; {new Date().getFullYear()} Aplikasi ini dikembangkan oleh Habifeb
            </div>
         </div>
@@ -186,10 +188,10 @@ function App() {
 
 const TransactionHistory = ({ transactions }: { transactions: Transaction[] }) => {
   return (
-    <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden">
+    <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden print:border-none print:shadow-none print:bg-white">
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm text-slate-300">
-          <thead className="bg-slate-900 text-slate-400 uppercase font-medium">
+        <table className="w-full text-left text-sm text-slate-300 print:text-black">
+          <thead className="bg-slate-900 text-slate-400 uppercase font-medium print:bg-slate-200 print:text-black">
             <tr>
               <th className="px-6 py-4">Waktu</th>
               <th className="px-6 py-4">Tipe</th>
@@ -198,26 +200,26 @@ const TransactionHistory = ({ transactions }: { transactions: Transaction[] }) =
               <th className="px-6 py-4">User</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-700">
+          <tbody className="divide-y divide-slate-700 print:divide-slate-300">
             {transactions.map((tx) => (
-              <tr key={tx.id} className="hover:bg-slate-750">
-                <td className="px-6 py-4 text-slate-400">
+              <tr key={tx.id} className="hover:bg-slate-750 print:hover:bg-transparent">
+                <td className="px-6 py-4 text-slate-400 print:text-black">
                   {tx.date}
                 </td>
                 <td className="px-6 py-4">
-                  <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${tx.type === 'in' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-orange-500/10 text-orange-500'}`}>
+                  <span className={`px-2 py-1 rounded text-xs font-bold uppercase print:border print:border-black ${tx.type === 'in' ? 'bg-emerald-500/10 text-emerald-500 print:text-black' : 'bg-orange-500/10 text-orange-500 print:text-black'}`}>
                     {tx.type === 'in' ? 'Masuk' : 'Keluar'}
                   </span>
                 </td>
                 <td className="px-6 py-4">
-                  <div className="font-mono text-white">{tx.serialNumber}</div>
-                  <div className="text-xs text-slate-500">{tx.size}</div>
+                  <div className="font-mono text-white print:text-black">{tx.serialNumber}</div>
+                  <div className="text-xs text-slate-500 print:text-slate-600">{tx.size}</div>
                 </td>
                 <td className="px-6 py-4">
-                   <div className="text-white">{tx.plateNumber || '-'}</div>
-                   <div className="text-xs text-slate-500">{tx.notes}</div>
+                   <div className="text-white print:text-black">{tx.plateNumber || '-'}</div>
+                   <div className="text-xs text-slate-500 print:text-slate-600">{tx.notes}</div>
                 </td>
-                <td className="px-6 py-4">{tx.user}</td>
+                <td className="px-6 py-4 print:text-black">{tx.user}</td>
               </tr>
             ))}
           </tbody>
@@ -270,7 +272,7 @@ const VehicleList = ({ vehicles, onRefresh }: { vehicles: Vehicle[], onRefresh: 
 
    return (
     <div className="space-y-6">
-       <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
+       <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 no-print">
           <h3 className="text-lg font-bold text-white mb-4">Tambah Kendaraan Baru</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
              <input 
@@ -303,25 +305,26 @@ const VehicleList = ({ vehicles, onRefresh }: { vehicles: Vehicle[], onRefresh: 
           </div>
        </div>
 
-       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 print:block print:space-y-4">
           {vehicles.map(v => (
-             <div key={v.id} className="bg-slate-800 border border-slate-700 p-4 rounded-xl group relative">
+             <div key={v.id} className="bg-slate-800 border border-slate-700 p-4 rounded-xl group relative print:bg-white print:border-slate-300 print:text-black print:mb-4 print:break-inside-avoid">
                 <div className="flex justify-between items-start">
-                   <h3 className="text-xl font-bold text-white font-mono">{v.plateNumber}</h3>
-                   <div className="flex items-center gap-2">
+                   <h3 className="text-xl font-bold text-white font-mono print:text-black">{v.plateNumber}</h3>
+                   <div className="flex items-center gap-2 no-print">
                       <span className="bg-slate-700 text-slate-300 text-xs px-2 py-1 rounded">{v.department}</span>
                       <button onClick={(e) => { e.stopPropagation(); setEditingVehicle(v); }} className="p-1 hover:bg-slate-700 rounded text-blue-400" title="Edit"><Edit size={16}/></button>
                       <button onClick={(e) => { e.stopPropagation(); handleDeleteClick(v.id); }} className="p-1 hover:bg-slate-700 rounded text-red-400" title="Hapus"><Trash2 size={16}/></button>
                    </div>
                 </div>
                 <div className="mt-2 text-sm">
-                  <p className="text-slate-400">Driver: <span className="text-white">{v.driver || '-'}</span></p>
-                  <p className="text-slate-400">Tipe: <span className="text-white">{v.vehicleType || '-'}</span></p>
+                  <p className="text-slate-400 print:text-slate-700">Driver: <span className="text-white print:text-black">{v.driver || '-'}</span></p>
+                  <p className="text-slate-400 print:text-slate-700">Tipe: <span className="text-white print:text-black">{v.vehicleType || '-'}</span></p>
+                  <p className="text-slate-400 print:text-slate-700 print:block hidden">Dept: <span className="text-white print:text-black">{v.department}</span></p>
                 </div>
-                <div className="mt-4 pt-4 border-t border-slate-700">
-                   <p className="text-xs text-slate-500">Ban Terpasang Terakhir:</p>
+                <div className="mt-4 pt-4 border-t border-slate-700 print:border-slate-300">
+                   <p className="text-xs text-slate-500 print:text-slate-600">Ban Terpasang Terakhir:</p>
                    {v.tireHistory.length > 0 ? (
-                      <p className="text-sm text-white font-mono mt-1">{v.tireHistory[v.tireHistory.length-1].serialNumber}</p>
+                      <p className="text-sm text-white font-mono mt-1 print:text-black">{v.tireHistory[v.tireHistory.length-1].serialNumber}</p>
                    ) : <p className="text-sm text-slate-600 italic">Belum ada history</p>}
                 </div>
              </div>
@@ -360,7 +363,7 @@ const VehicleEditModal = ({ vehicle, onClose, onSave }: { vehicle: Vehicle, onCl
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[55] backdrop-blur-sm p-4">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[55] backdrop-blur-sm p-4 no-print">
       <div className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg border border-slate-700">
         <div className="flex justify-between items-center p-6 border-b border-slate-700">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
