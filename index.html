@@ -2,7 +2,10 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="description" content="Aplikasi Warehouse Management System Bengkel Kerinci" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Bengkel Kerinci - Habifeb</title>
     <!-- Tailwind via CDN for simplicity in this setup -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -30,6 +33,7 @@
       body {
         background-color: #0f172a; /* slate-900 */
         color: #cbd5e1; /* slate-300 */
+        overscroll-behavior-y: none; /* Prevent pull-to-refresh on mobile app feel */
       }
       /* Custom Scrollbar */
       ::-webkit-scrollbar {
@@ -87,7 +91,8 @@
     "jspdf": "https://esm.sh/jspdf@^4.0.0",
     "jspdf-autotable": "https://esm.sh/jspdf-autotable@^5.0.7",
     "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "vite-plugin-pwa": "https://esm.sh/vite-plugin-pwa@^1.2.0"
   }
 }
 </script>
