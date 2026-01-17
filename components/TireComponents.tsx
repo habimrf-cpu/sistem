@@ -30,7 +30,10 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
   const [showModal, setShowModal] = useState<'in' | 'out' | 'edit' | 'detail' | 'qr' | null>(null);
   const [selectedTire, setSelectedTire] = useState<Tire | null>(null);
   
-  // Delete confirmation state
+  // Selection State
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  
+  // Delete confirmation state (number for single, -1 for bulk)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   
   // File Input Ref for Import
@@ -58,14 +61,49 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
   const handleDeleteClick = (id: number) => {
     setConfirmDeleteId(id);
   };
+  
+  const handleBulkDeleteClick = () => {
+    setConfirmDeleteId(-1); // Signal bulk delete
+  };
 
   const confirmDelete = () => {
-    if (confirmDeleteId !== null) {
+    if (confirmDeleteId === -1) {
+        // Bulk delete
+        dataService.deleteTire(0); // Dummy call if needed, but we use the loop or new service method
+        // Using new method if available, or fallback to loop
+        if (dataService.deleteTires) {
+            dataService.deleteTires(selectedIds);
+        } else {
+            selectedIds.forEach(id => dataService.deleteTire(id));
+        }
+        setSelectedIds([]);
+        setConfirmDeleteId(null);
+        onRefresh();
+    } else if (confirmDeleteId !== null) {
       dataService.deleteTire(confirmDeleteId);
       setConfirmDeleteId(null);
       onRefresh();
     }
   };
+
+  // Selection Logic
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.checked) {
+          const currentIds = currentData.map(t => t.id);
+          setSelectedIds(prev => Array.from(new Set([...prev, ...currentIds])));
+      } else {
+          const currentIds = new Set(currentData.map(t => t.id));
+          setSelectedIds(prev => prev.filter(id => !currentIds.has(id)));
+      }
+  };
+
+  const handleSelectOne = (id: number) => {
+      setSelectedIds(prev => 
+          prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+      );
+  };
+  
+  const isAllSelected = currentData.length > 0 && currentData.every(t => selectedIds.includes(t.id));
 
   // --- Print Functionality (Browser Print) ---
   const handlePrintPage = () => {
@@ -227,12 +265,20 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
         </div>
 
         <div className="flex gap-2 w-full md:w-auto">
-          <button onClick={() => setShowModal('in')} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-            <Plus size={16} /> Ban Masuk
-          </button>
-          <button onClick={() => setShowModal('out')} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-            <ArrowUpRight size={16} /> Ban Keluar
-          </button>
+          {selectedIds.length > 0 ? (
+             <button onClick={handleBulkDeleteClick} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors animate-fade-in">
+               <Trash2 size={16} /> Hapus ({selectedIds.length})
+             </button>
+          ) : (
+            <>
+                <button onClick={() => setShowModal('in')} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                    <Plus size={16} /> Ban Masuk
+                </button>
+                <button onClick={() => setShowModal('out')} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                    <ArrowUpRight size={16} /> Ban Keluar
+                </button>
+            </>
+          )}
           
            <div className="dropdown relative group">
               <button className="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-slate-300">
@@ -274,6 +320,14 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
           <table className="w-full text-left text-sm text-slate-300 print:text-black">
             <thead className="bg-slate-900 text-slate-400 uppercase font-medium print:bg-slate-200 print:text-black">
               <tr>
+                <th className="px-6 py-4 w-10 no-print">
+                    <input 
+                        type="checkbox" 
+                        className="rounded bg-slate-800 border-slate-600 text-blue-600 focus:ring-blue-500"
+                        checked={isAllSelected}
+                        onChange={handleSelectAll}
+                    />
+                </th>
                 <th className="px-6 py-4">Nomor Seri</th>
                 <th className="px-6 py-4">Ukuran</th>
                 <th className="px-6 py-4">Status</th>
@@ -284,7 +338,15 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
             </thead>
             <tbody className="divide-y divide-slate-700 print:divide-slate-300">
               {currentData.length > 0 ? currentData.map((tire) => (
-                <tr key={tire.id} className="hover:bg-slate-750 transition-colors print:hover:bg-transparent">
+                <tr key={tire.id} className={`hover:bg-slate-750 transition-colors print:hover:bg-transparent ${selectedIds.includes(tire.id) ? 'bg-blue-900/20' : ''}`}>
+                  <td className="px-6 py-4 no-print">
+                      <input 
+                        type="checkbox" 
+                        className="rounded bg-slate-800 border-slate-600 text-blue-600 focus:ring-blue-500"
+                        checked={selectedIds.includes(tire.id)}
+                        onChange={() => handleSelectOne(tire.id)}
+                    />
+                  </td>
                   <td className="px-6 py-4 font-mono font-medium text-white print:text-black">
                     {tire.serialNumber}
                   </td>
@@ -322,7 +384,7 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
                     Tidak ada data ban yang ditemukan.
                   </td>
                 </tr>
@@ -414,8 +476,11 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
       
       <ConfirmationModal 
           isOpen={confirmDeleteId !== null}
-          title="Hapus Ban"
-          message="Apakah Anda yakin ingin menghapus data ban ini? Data yang dihapus tidak dapat dikembalikan."
+          title={confirmDeleteId === -1 ? `Hapus ${selectedIds.length} Ban Terpilih` : "Hapus Ban"}
+          message={confirmDeleteId === -1 
+            ? "Apakah Anda yakin ingin menghapus semua data ban yang dipilih? Tindakan ini tidak dapat dibatalkan."
+            : "Apakah Anda yakin ingin menghapus data ban ini? Data yang dihapus tidak dapat dikembalikan."
+          }
           onConfirm={confirmDelete}
           onCancel={() => setConfirmDeleteId(null)}
        />

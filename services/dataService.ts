@@ -76,6 +76,11 @@ export const dataService = {
     localStorage.setItem(STORAGE_KEYS.TIRES, JSON.stringify(tires));
   },
 
+  deleteTires: (ids: number[]): void => {
+    const tires = dataService.getTires().filter(t => !ids.includes(t.id));
+    localStorage.setItem(STORAGE_KEYS.TIRES, JSON.stringify(tires));
+  },
+
   isSerialUnique: (serial: string, excludeId?: number): boolean => {
     const tires = dataService.getTires();
     return !tires.some(t => t.serialNumber === serial && t.id !== excludeId);
