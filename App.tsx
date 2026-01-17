@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Truck, History, Settings, Package, Menu, X, CheckCircle, LogIn, LogOut
 } from 'lucide-react';
-import { GoogleOAuthProvider, googleLogout } from '@react-oauth/google';
+import { GoogleOAuthProvider, googleLogout, GoogleLogin } from '@react-oauth/google';
 import { jwtDecode } from 'jwt-decode';
 
 import { Tire, Transaction, Vehicle, ViewState, UserProfile } from './types';
@@ -14,13 +14,6 @@ import { TransactionHistory } from './components/TransactionHistory';
 import { VehicleList } from './components/VehicleList';
 import { SettingsView } from './components/SettingsView';
 import { Logo } from './components/Logo';
-
-// Add global declaration for window.google
-declare global {
-  interface Window {
-    google: any;
-  }
-}
 
 // Client ID untuk Google OAuth (Bengkel Kerinci)
 const GOOGLE_CLIENT_ID = "1007543822536-dmnmdepgjqg055rmnn95gsg76h8iaqsb.apps.googleusercontent.com";
@@ -59,9 +52,12 @@ function App() {
       setNotification({ message: msg, type });
   };
 
-  // Auth Handlers (Menggunakan window.google untuk Sign In Button standar)
+  // Auth Handlers
   const handleLoginSuccess = (response: any) => {
     try {
+      if (!response.credential) {
+         throw new Error("No credential received");
+      }
       const decoded: any = jwtDecode(response.credential);
       const email = decoded.email;
       const role = authService.getRole(email);
@@ -80,23 +76,6 @@ function App() {
       showNotification('Gagal login', 'error');
     }
   };
-
-  // Setup Google Button
-  useEffect(() => {
-    if (window.google) {
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: handleLoginSuccess
-      });
-      // Render button if no user
-      if (!user) {
-         window.google.accounts.id.renderButton(
-            document.getElementById("googleBtn"),
-            { theme: "outline", size: "large", text: "signin_with" }
-         );
-      }
-    }
-  }, [user]);
 
   const handleLogout = () => {
     googleLogout();
@@ -232,7 +211,16 @@ function App() {
              ) : (
                 <div className="text-center">
                    <p className="text-xs text-slate-500 mb-3">Login untuk akses penuh</p>
-                   <div id="googleBtn" className="flex justify-center"></div>
+                   <div className="flex justify-center">
+                      <GoogleLogin 
+                        onSuccess={handleLoginSuccess}
+                        onError={() => showNotification("Login gagal", "error")}
+                        theme="filled_blue"
+                        shape="circle"
+                        width="200"
+                        text="signin_with"
+                      />
+                   </div>
                 </div>
              )}
           </div>
