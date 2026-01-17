@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Tire, Transaction } from '../types';
-import { Package, TrendingUp, TrendingDown, Clock, AlertTriangle, ArrowUpRight, ArrowDownRight, Layers, Tag } from 'lucide-react';
+import { Package, TrendingDown, Clock, ArrowUpRight, ArrowDownRight, Layers, Tag, ChevronRight, Info } from 'lucide-react';
 
 interface DashboardProps {
   tires: Tire[];
@@ -8,6 +8,7 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => {
+  const [selectedSize, setSelectedSize] = useState<string | null>(null);
   
   const stats = useMemo(() => {
     const available = tires.filter(t => t.status === 'available');
@@ -17,21 +18,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => 
     return { available: available.length, out: out.length, critical };
   }, [tires]);
 
-  const stockBreakdown = useMemo(() => {
+  // Calculate generic stock breakdown (Size only for the main list)
+  const sizeBreakdown = useMemo(() => {
     const available = tires.filter(t => t.status === 'available');
-    const byBrand: Record<string, number> = {};
     const bySize: Record<string, number> = {};
 
     available.forEach(t => {
-       const brand = (t.brand || 'Tanpa Merk').toUpperCase();
-       byBrand[brand] = (byBrand[brand] || 0) + 1;
-
        const size = t.size || 'Tanpa Ukuran';
        bySize[size] = (bySize[size] || 0) + 1;
     });
 
-    return { byBrand, bySize };
+    return bySize;
   }, [tires]);
+
+  // Calculate Brand Breakdown based on Selected Size
+  const brandDetailForSize = useMemo(() => {
+    if (!selectedSize) return [];
+
+    const available = tires.filter(t => t.status === 'available' && t.size === selectedSize);
+    const byBrand: Record<string, number> = {};
+
+    available.forEach(t => {
+       const brand = (t.brand || 'Tanpa Merk').toUpperCase();
+       byBrand[brand] = (byBrand[brand] || 0) + 1;
+    });
+
+    // Return as array sorted by count
+    return (Object.entries(byBrand) as [string, number][]).sort(([,a], [,b]) => b - a);
+  }, [tires, selectedSize]);
 
   // Get recent 10 transactions
   const recentTransactions = useMemo(() => {
@@ -63,57 +77,92 @@ export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => 
         </div>
       </div>
 
-      {/* Breakdown Stats */}
+      {/* Main Stock Visualization Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg">
-           <div className="flex items-center gap-2 mb-4 border-b border-slate-700 pb-3">
-              <Tag size={18} className="text-blue-400"/>
-              <h4 className="font-bold text-white">Stok per Merk</h4>
-           </div>
-           <div className="space-y-3">
-              {Object.keys(stockBreakdown.byBrand).length > 0 ? (
-                  (Object.entries(stockBreakdown.byBrand) as [string, number][])
-                    .sort(([,a], [,b]) => b - a)
-                    .map(([brand, count]) => (
-                    <div key={brand} className="flex justify-between items-center text-sm">
-                        <span className="text-slate-300">{brand}</span>
-                        <div className="flex items-center">
-                            <div className="w-24 h-2 bg-slate-700 rounded-full mr-3 overflow-hidden">
-                                <div className="h-full bg-blue-500" style={{ width: `${stats.available > 0 ? (count / stats.available) * 100 : 0}%` }}></div>
-                            </div>
-                            <span className="font-mono font-bold text-white bg-slate-700 px-2 py-0.5 rounded min-w-[30px] text-center">{count}</span>
-                        </div>
-                    </div>
-                  ))
-              ) : (
-                  <p className="text-slate-500 text-sm italic">Belum ada data stok.</p>
-              )}
-           </div>
-        </div>
-
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg">
+        
+        {/* Card 1: Stock per Size (Interactive) */}
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg flex flex-col">
            <div className="flex items-center gap-2 mb-4 border-b border-slate-700 pb-3">
               <Layers size={18} className="text-purple-400"/>
               <h4 className="font-bold text-white">Stok per Ukuran</h4>
            </div>
-           <div className="space-y-3">
-              {Object.keys(stockBreakdown.bySize).length > 0 ? (
-                  (Object.entries(stockBreakdown.bySize) as [string, number][])
+           
+           <div className="space-y-2 flex-1">
+              <p className="text-xs text-slate-500 mb-2">Klik pada ukuran untuk melihat rincian merk.</p>
+              {Object.keys(sizeBreakdown).length > 0 ? (
+                  (Object.entries(sizeBreakdown) as [string, number][])
                     .sort(([,a], [,b]) => b - a)
-                    .map(([size, count]) => (
-                    <div key={size} className="flex justify-between items-center text-sm">
-                        <span className="text-slate-300">{size}</span>
-                         <div className="flex items-center">
-                            <div className="w-24 h-2 bg-slate-700 rounded-full mr-3 overflow-hidden">
-                                <div className="h-full bg-purple-500" style={{ width: `${stats.available > 0 ? (count / stats.available) * 100 : 0}%` }}></div>
-                            </div>
-                            <span className="font-mono font-bold text-white bg-slate-700 px-2 py-0.5 rounded min-w-[30px] text-center">{count}</span>
-                        </div>
-                    </div>
-                  ))
+                    .map(([size, count]) => {
+                    const isSelected = selectedSize === size;
+                    return (
+                      <button 
+                        key={size} 
+                        onClick={() => setSelectedSize(isSelected ? null : size)}
+                        className={`w-full flex justify-between items-center text-sm p-3 rounded-lg transition-all border ${
+                          isSelected 
+                            ? 'bg-purple-500/20 border-purple-500/50' 
+                            : 'bg-slate-800/50 border-slate-700 hover:bg-slate-700'
+                        }`}
+                      >
+                          <div className="flex items-center gap-3">
+                             <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-purple-400' : 'bg-slate-600'}`}></div>
+                             <span className={`font-medium ${isSelected ? 'text-white' : 'text-slate-300'}`}>{size}</span>
+                          </div>
+                          
+                          <div className="flex items-center gap-3">
+                              <span className="font-mono font-bold text-white bg-slate-900 px-2 py-0.5 rounded min-w-[30px] text-center shadow-sm border border-slate-700">
+                                {count}
+                              </span>
+                              <ChevronRight size={16} className={`transition-transform ${isSelected ? 'text-purple-400 rotate-90' : 'text-slate-600'}`} />
+                          </div>
+                      </button>
+                    )})
               ) : (
-                  <p className="text-slate-500 text-sm italic">Belum ada data stok.</p>
+                  <p className="text-slate-500 text-sm italic py-4 text-center">Belum ada data stok.</p>
               )}
+           </div>
+        </div>
+
+        {/* Card 2: Brand Details (Dynamic) */}
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg flex flex-col">
+           <div className="flex items-center gap-2 mb-4 border-b border-slate-700 pb-3">
+              <Tag size={18} className="text-blue-400"/>
+              <h4 className="font-bold text-white">
+                {selectedSize ? `Rincian: ${selectedSize}` : 'Rincian Merek'}
+              </h4>
+           </div>
+
+           <div className="flex-1">
+             {selectedSize ? (
+                <div className="space-y-3 animate-fade-in">
+                  {brandDetailForSize.length > 0 ? (
+                    brandDetailForSize.map(([brand, count]) => {
+                      // Calculate percentage relative to the selected size total
+                      const totalForSize = brandDetailForSize.reduce((acc, [,c]) => acc + c, 0);
+                      const percent = (count / totalForSize) * 100;
+                      
+                      return (
+                        <div key={brand} className="flex justify-between items-center text-sm p-2 hover:bg-slate-750 rounded transition-colors">
+                            <span className="text-slate-300 font-medium">{brand}</span>
+                            <div className="flex items-center">
+                                <div className="w-24 h-2 bg-slate-700 rounded-full mr-3 overflow-hidden">
+                                    <div className="h-full bg-blue-500" style={{ width: `${percent}%` }}></div>
+                                </div>
+                                <span className="font-mono font-bold text-white bg-slate-700 px-2 py-0.5 rounded min-w-[30px] text-center border border-slate-600">{count}</span>
+                            </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-slate-500 text-sm italic text-center py-8">Tidak ada data untuk ukuran ini.</p>
+                  )}
+                </div>
+             ) : (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500 min-h-[200px]">
+                   <Info size={48} className="text-slate-700 mb-3" />
+                   <p className="text-sm">Pilih salah satu ukuran ban di sebelah kiri untuk melihat rincian stok berdasarkan merek.</p>
+                </div>
+             )}
            </div>
         </div>
       </div>
