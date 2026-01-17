@@ -98,6 +98,11 @@ export const dataService = {
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
   },
 
+  deleteTransaction: (id: number): void => {
+    const transactions = dataService.getTransactions().filter(t => t.id !== id);
+    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+  },
+
   // --- Vehicles ---
   getVehicles: (): Vehicle[] => {
     const data = localStorage.getItem(STORAGE_KEYS.VEHICLES);
