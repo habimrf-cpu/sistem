@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { Tire, Vehicle, SIZE_OPTIONS, BRAND_OPTIONS, Transaction, UserProfile } from '../types';
 import { 
   Search, Eye, Edit, Trash2, QrCode, Plus, ArrowUpRight, ArrowDownRight, 
-  X, AlertTriangle, FileSpreadsheet, Printer, Archive, Save, Upload, Download
+  X, AlertTriangle, FileSpreadsheet, Printer, Archive, Save, Upload, Download, Loader2
 } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import { formatDateIndo } from '../utils/helpers';
@@ -71,21 +71,24 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
     setConfirmDeleteId(-1); // Signal bulk delete
   };
 
-  const confirmDelete = () => {
-    if (confirmDeleteId === -1) {
-        // Bulk delete
-        if (dataService.deleteTires) {
-            dataService.deleteTires(selectedIds);
-        } else {
-            selectedIds.forEach(id => dataService.deleteTire(id));
+  const confirmDelete = async () => {
+    try {
+        if (confirmDeleteId === -1) {
+            // Bulk delete
+            if (dataService.deleteTires) {
+                await dataService.deleteTires(selectedIds);
+            } else {
+                for(const id of selectedIds) await dataService.deleteTire(id);
+            }
+            setSelectedIds([]);
+        } else if (confirmDeleteId !== null) {
+          await dataService.deleteTire(confirmDeleteId);
         }
-        setSelectedIds([]);
         setConfirmDeleteId(null);
         onRefresh();
-    } else if (confirmDeleteId !== null) {
-      dataService.deleteTire(confirmDeleteId);
-      setConfirmDeleteId(null);
-      onRefresh();
+    } catch (error) {
+        alert("Gagal menghapus. Pastikan tabel database sudah dibuat.");
+        console.error(error);
     }
   };
 
@@ -171,12 +174,11 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
         const bstr = evt.target?.result;
         if (!bstr) return;
 
         try {
-            // Updated to use cellDates: true for better date handling
             const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
             const wsname = wb.SheetNames[0];
             const ws = wb.Sheets[wsname];
@@ -185,60 +187,57 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
             let successCount = 0;
             let failCount = 0;
 
-            data.forEach((row: any) => {
-                const sn = row['Nomor Seri'] || row['serialNumber'];
-                
-                // --- DATE PARSING FIX ---
-                const rawDate = row['Tanggal Masuk (YYYY-MM-DD)'] || row['dateIn'];
-                let finalDate = new Date().toISOString().split('T')[0];
+            for (const row of data as any[]) {
+                try {
+                  const sn = row['Nomor Seri'] || row['serialNumber'];
+                  const rawDate = row['Tanggal Masuk (YYYY-MM-DD)'] || row['dateIn'];
+                  let finalDate = new Date().toISOString().split('T')[0];
 
-                if (rawDate) {
-                  if (rawDate instanceof Date) {
-                    // If library parsed it as Date object, format it manually to YYYY-MM-DD local
-                    const year = rawDate.getFullYear();
-                    const month = String(rawDate.getMonth() + 1).padStart(2, '0');
-                    const day = String(rawDate.getDate()).padStart(2, '0');
-                    finalDate = `${year}-${month}-${day}`;
-                  } else if (typeof rawDate === 'number') {
-                    // Fallback if it comes as number (Excel Serial Date)
-                    // Convert Excel date to JS date
-                    const date = new Date((rawDate - 25569) * 86400 * 1000);
-                    finalDate = date.toISOString().split('T')[0];
-                  } else {
-                    // String fallback
-                    finalDate = String(rawDate);
+                  if (rawDate) {
+                    if (rawDate instanceof Date) {
+                      const year = rawDate.getFullYear();
+                      const month = String(rawDate.getMonth() + 1).padStart(2, '0');
+                      const day = String(rawDate.getDate()).padStart(2, '0');
+                      finalDate = `${year}-${month}-${day}`;
+                    } else if (typeof rawDate === 'number') {
+                      const date = new Date((rawDate - 25569) * 86400 * 1000);
+                      finalDate = date.toISOString().split('T')[0];
+                    } else {
+                      finalDate = String(rawDate);
+                    }
                   }
+                  
+                  if (sn && await dataService.isSerialUnique(sn)) {
+                      const newTire: Tire = {
+                          id: Date.now() + Math.random(),
+                          serialNumber: String(sn).toUpperCase(),
+                          brand: row['Merk'] || BRAND_OPTIONS[0],
+                          size: row['Ukuran'] || SIZE_OPTIONS[0],
+                          condition: row['Kondisi'] || 'Baru',
+                          status: 'available',
+                          location: 'Bengkel Krc',
+                          dateIn: finalDate,
+                          createdBy: 'Import',
+                          updatedAt: Date.now()
+                      };
+                      await dataService.saveTire(newTire);
+                      successCount++;
+                  } else {
+                      failCount++;
+                  }
+                } catch (rowError) {
+                  console.error("Row import failed", rowError);
+                  failCount++;
                 }
-                
-                // Basic Validation
-                if (sn && dataService.isSerialUnique(sn)) {
-                    const newTire: Tire = {
-                        id: Date.now() + Math.random(),
-                        serialNumber: String(sn).toUpperCase(),
-                        brand: row['Merk'] || BRAND_OPTIONS[0],
-                        size: row['Ukuran'] || SIZE_OPTIONS[0],
-                        condition: row['Kondisi'] || 'Baru',
-                        status: 'available',
-                        location: 'Bengkel Krc',
-                        dateIn: finalDate,
-                        createdBy: 'Import',
-                        updatedAt: Date.now()
-                    };
-                    dataService.saveTire(newTire);
-                    successCount++;
-                } else {
-                    failCount++;
-                }
-            });
+            }
 
             alert(`Import Selesai.\nBerhasil: ${successCount}\nGagal/Duplikat: ${failCount}`);
             onRefresh();
 
         } catch (error) {
             console.error(error);
-            alert("Gagal membaca file Excel. Pastikan format sesuai template.");
+            alert("Gagal membaca file Excel atau koneksi database error.");
         } finally {
-            // Reset input
             if(fileInputRef.current) fileInputRef.current.value = '';
         }
     };
@@ -448,11 +447,11 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
         </div>
       </div>
 
-      {/* MODALS - Wrapped with Admin Checks (Except Detail & QR) */}
+      {/* MODALS - Wrapped with Async Handlers */}
       {showModal === 'in' && isAdmin && (
-        <TireFormModal type="in" onClose={() => setShowModal(null)} onSave={(t) => {
-             dataService.saveTire(t);
-             dataService.addTransaction({
+        <TireFormModal type="in" onClose={() => setShowModal(null)} onSave={async (t) => {
+             await dataService.saveTire(t);
+             await dataService.addTransaction({
                  id: Date.now(),
                  type: 'in',
                  serialNumber: t.serialNumber,
@@ -464,15 +463,15 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
                  timestamp: Date.now(),
                  notes: 'Ban Baru Masuk'
              });
-             onAddTransaction({} as any); // just trigger refresh
+             onAddTransaction({} as any);
              onRefresh();
              setShowModal(null);
         }} />
       )}
 
       {showModal === 'edit' && selectedTire && isAdmin && (
-        <TireEditModal tire={selectedTire} onClose={() => {setShowModal(null); setSelectedTire(null);}} onSave={(t) => {
-            dataService.saveTire(t);
+        <TireEditModal tire={selectedTire} onClose={() => {setShowModal(null); setSelectedTire(null);}} onSave={async (t) => {
+            await dataService.saveTire(t);
             onRefresh();
             setShowModal(null);
             setSelectedTire(null);
@@ -484,10 +483,10 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
           tires={tires} 
           vehicles={vehicles}
           onClose={() => setShowModal(null)} 
-          onSave={(updatedTire, tx) => {
-            dataService.saveTire(updatedTire);
-            dataService.addTransaction({...tx, user: user?.name || 'Admin'});
-            // Update vehicle history if needed
+          onSave={async (updatedTire, tx) => {
+            await dataService.saveTire(updatedTire);
+            await dataService.addTransaction({...tx, user: user?.name || 'Admin'});
+            
             const vehicle = vehicles.find(v => v.plateNumber === updatedTire.plateNumber);
             if(vehicle) {
                 const updatedVehicle = {...vehicle, tireHistory: [...vehicle.tireHistory, {
@@ -495,7 +494,7 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
                     dateInstalled: updatedTire.dateOut || '',
                     odometer: updatedTire.odometer || 0
                 }]};
-                dataService.saveVehicle(updatedVehicle);
+                await dataService.saveVehicle(updatedVehicle);
             }
             onRefresh();
             setShowModal(null);
@@ -526,9 +525,9 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
   );
 };
 
-// --- Sub-components (Modals) ---
-// (No changes needed in modals internal logic, just parent rendering logic)
-const TireFormModal: React.FC<{ type: 'in', onClose: () => void, onSave: (t: Tire) => void }> = ({ onClose, onSave }) => {
+// --- Sub-components (Modals Updated with Loading State & Try-Catch) ---
+
+const TireFormModal: React.FC<{ type: 'in', onClose: () => void, onSave: (t: Tire) => Promise<void> }> = ({ onClose, onSave }) => {
   const [form, setForm] = useState<Partial<Tire>>({
     serialNumber: '',
     brand: BRAND_OPTIONS[0],
@@ -538,26 +537,44 @@ const TireFormModal: React.FC<{ type: 'in', onClose: () => void, onSave: (t: Tir
     dateIn: new Date().toISOString().split('T')[0]
   });
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+    
     if (!form.serialNumber) {
       setError('Mohon lengkapi Nomor Seri');
       return;
     }
-    if (!dataService.isSerialUnique(form.serialNumber)) {
-       setError('Nomor Seri sudah ada di database!');
-       return;
-    }
+    
+    setIsSubmitting(true);
+    
+    try {
+        if (!await dataService.isSerialUnique(form.serialNumber)) {
+           throw new Error('Nomor Seri sudah ada di database!');
+        }
 
-    const newTire: Tire = {
-      ...form as Tire,
-      id: Date.now(),
-      status: 'available',
-      createdBy: 'Admin',
-      updatedAt: Date.now()
-    };
-    onSave(newTire);
+        const newTire: Tire = {
+          ...form as Tire,
+          id: Date.now(),
+          status: 'available',
+          createdBy: 'Admin',
+          updatedAt: Date.now()
+        };
+        await onSave(newTire);
+    } catch (err: any) {
+        console.error(err);
+        const errMsg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+        
+        if (errMsg.includes("find the table") || errMsg.includes("42P01") || err?.code === 'PGRST205') {
+           setError("Tabel Database belum dibuat. Silakan login admin dan buka menu Pengaturan > Database Setup.");
+        } else {
+           setError(errMsg);
+        }
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   return (
@@ -567,7 +584,7 @@ const TireFormModal: React.FC<{ type: 'in', onClose: () => void, onSave: (t: Tir
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
             <Plus className="text-emerald-500" /> Input Ban Masuk
           </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24}/></button>
+          <button onClick={onClose} disabled={isSubmitting} className="text-slate-400 hover:text-white"><X size={24}/></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && <div className="bg-red-500/10 text-red-500 p-3 rounded-lg text-sm flex items-center gap-2"><AlertTriangle size={16}/> {error}</div>}
@@ -616,8 +633,10 @@ const TireFormModal: React.FC<{ type: 'in', onClose: () => void, onSave: (t: Tir
           </div>
 
           <div className="pt-4 flex justify-end gap-3">
-             <button type="button" onClick={onClose} className="px-4 py-2 text-slate-300 hover:text-white">Batal</button>
-             <button type="submit" className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium">Simpan</button>
+             <button type="button" onClick={onClose} disabled={isSubmitting} className="px-4 py-2 text-slate-300 hover:text-white">Batal</button>
+             <button type="submit" disabled={isSubmitting} className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium flex items-center gap-2">
+                {isSubmitting && <Loader2 size={16} className="animate-spin"/>} Simpan
+             </button>
           </div>
         </form>
       </div>
@@ -625,32 +644,47 @@ const TireFormModal: React.FC<{ type: 'in', onClose: () => void, onSave: (t: Tir
   );
 };
 
-const TireEditModal: React.FC<{ tire: Tire, onClose: () => void, onSave: (t: Tire) => void }> = ({ tire, onClose, onSave }) => {
+const TireEditModal: React.FC<{ tire: Tire, onClose: () => void, onSave: (t: Tire) => Promise<void> }> = ({ tire, onClose, onSave }) => {
   const [formData, setFormData] = useState({
     serialNumber: tire.serialNumber,
     brand: tire.brand || BRAND_OPTIONS[0],
     size: tire.size || SIZE_OPTIONS[0]
   });
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+    
     if (!formData.serialNumber) {
       setError("Nomor Seri tidak boleh kosong");
       return;
     }
-    if (formData.serialNumber !== tire.serialNumber && !dataService.isSerialUnique(formData.serialNumber)) {
-      setError("Nomor Seri sudah digunakan oleh ban lain!");
-      return;
-    }
+    
+    setIsSubmitting(true);
+    try {
+        if (formData.serialNumber !== tire.serialNumber && !await dataService.isSerialUnique(formData.serialNumber)) {
+          throw new Error("Nomor Seri sudah digunakan oleh ban lain!");
+        }
 
-    onSave({
-        ...tire,
-        serialNumber: formData.serialNumber.toUpperCase(),
-        brand: formData.brand,
-        size: formData.size,
-        updatedAt: Date.now()
-    });
+        await onSave({
+            ...tire,
+            serialNumber: formData.serialNumber.toUpperCase(),
+            brand: formData.brand,
+            size: formData.size,
+            updatedAt: Date.now()
+        });
+    } catch (err: any) {
+        const errMsg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+        if (errMsg.includes("find the table") || errMsg.includes("42P01") || err?.code === 'PGRST205') {
+           setError("Tabel Database belum dibuat. Silakan login admin dan buka menu Pengaturan > Database Setup.");
+        } else {
+           setError(errMsg);
+        }
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   return (
@@ -660,7 +694,7 @@ const TireEditModal: React.FC<{ tire: Tire, onClose: () => void, onSave: (t: Tir
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
             <Edit className="text-blue-500" /> Edit Data Ban
           </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24}/></button>
+          <button onClick={onClose} disabled={isSubmitting} className="text-slate-400 hover:text-white"><X size={24}/></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && <div className="bg-red-500/10 text-red-500 p-2 rounded text-sm">{error}</div>}
@@ -692,9 +726,9 @@ const TireEditModal: React.FC<{ tire: Tire, onClose: () => void, onSave: (t: Tir
           </div>
 
           <div className="pt-2 flex justify-end gap-3">
-             <button type="button" onClick={onClose} className="px-4 py-2 text-slate-300 hover:text-white">Batal</button>
-             <button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center gap-2">
-                <Save size={16}/> Simpan
+             <button type="button" onClick={onClose} disabled={isSubmitting} className="px-4 py-2 text-slate-300 hover:text-white">Batal</button>
+             <button type="submit" disabled={isSubmitting} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium flex items-center gap-2">
+                {isSubmitting ? <Loader2 size={16} className="animate-spin"/> : <Save size={16}/>} Simpan
              </button>
           </div>
         </form>
@@ -703,7 +737,7 @@ const TireEditModal: React.FC<{ tire: Tire, onClose: () => void, onSave: (t: Tir
   );
 };
 
-const TireOutModal: React.FC<{ tires: Tire[], vehicles: Vehicle[], onClose: () => void, onSave: (t: Tire, tx: Transaction) => void }> = ({ tires, vehicles, onClose, onSave }) => {
+const TireOutModal: React.FC<{ tires: Tire[], vehicles: Vehicle[], onClose: () => void, onSave: (t: Tire, tx: Transaction) => Promise<void> }> = ({ tires, vehicles, onClose, onSave }) => {
   const availableTires = tires.filter(t => t.status === 'available');
   const [selectedSerial, setSelectedSerial] = useState('');
   const [form, setForm] = useState({
@@ -712,39 +746,55 @@ const TireOutModal: React.FC<{ tires: Tire[], vehicles: Vehicle[], onClose: () =
     dateOut: new Date().toISOString().split('T')[0],
     notes: ''
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSerial || !form.plateNumber) return;
 
     const tire = availableTires.find(t => t.serialNumber === selectedSerial);
     if (!tire) return;
 
-    const updatedTire: Tire = {
-      ...tire,
-      status: 'out',
-      dateOut: form.dateOut,
-      plateNumber: form.plateNumber,
-      odometer: form.odometer,
-      updatedAt: Date.now()
-    };
+    setIsSubmitting(true);
+    setError('');
 
-    const tx: Transaction = {
-      id: Date.now(),
-      type: 'out',
-      serialNumber: tire.serialNumber,
-      brand: tire.brand,
-      size: tire.size,
-      condition: tire.condition,
-      date: form.dateOut,
-      plateNumber: form.plateNumber,
-      odometer: form.odometer,
-      user: 'Admin',
-      notes: form.notes,
-      timestamp: Date.now()
-    };
+    try {
+        const updatedTire: Tire = {
+          ...tire,
+          status: 'out',
+          dateOut: form.dateOut,
+          plateNumber: form.plateNumber,
+          odometer: form.odometer,
+          updatedAt: Date.now()
+        };
 
-    onSave(updatedTire, tx);
+        const tx: Transaction = {
+          id: Date.now(),
+          type: 'out',
+          serialNumber: tire.serialNumber,
+          brand: tire.brand,
+          size: tire.size,
+          condition: tire.condition,
+          date: form.dateOut,
+          plateNumber: form.plateNumber,
+          odometer: form.odometer,
+          user: 'Admin',
+          notes: form.notes,
+          timestamp: Date.now()
+        };
+
+        await onSave(updatedTire, tx);
+    } catch (err: any) {
+        const errMsg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+        if (errMsg.includes("find the table") || errMsg.includes("42P01") || err?.code === 'PGRST205') {
+            setError("Tabel Database belum dibuat. Silakan login admin dan buka menu Pengaturan > Database Setup.");
+        } else {
+            setError(errMsg);
+        }
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   return (
@@ -754,9 +804,10 @@ const TireOutModal: React.FC<{ tires: Tire[], vehicles: Vehicle[], onClose: () =
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
             <ArrowUpRight className="text-orange-500" /> Input Ban Keluar
           </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24}/></button>
+          <button onClick={onClose} disabled={isSubmitting} className="text-slate-400 hover:text-white"><X size={24}/></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && <div className="bg-red-500/10 text-red-500 p-2 rounded text-sm">{error}</div>}
           
           <div>
             <label className="block text-sm font-medium text-slate-400 mb-1">Pilih Ban (Tersedia) *</label>
@@ -801,8 +852,10 @@ const TireOutModal: React.FC<{ tires: Tire[], vehicles: Vehicle[], onClose: () =
           </div>
 
           <div className="pt-4 flex justify-end gap-3">
-             <button type="button" onClick={onClose} className="px-4 py-2 text-slate-300 hover:text-white">Batal</button>
-             <button type="submit" className="px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium">Simpan Keluar</button>
+             <button type="button" onClick={onClose} disabled={isSubmitting} className="px-4 py-2 text-slate-300 hover:text-white">Batal</button>
+             <button type="submit" disabled={isSubmitting} className="px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium flex items-center gap-2">
+                {isSubmitting ? <Loader2 size={16} className="animate-spin"/> : 'Simpan Keluar'}
+             </button>
           </div>
         </form>
       </div>

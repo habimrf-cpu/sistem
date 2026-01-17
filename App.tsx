@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  LayoutDashboard, Truck, History, Settings, Package, Menu, X, CheckCircle, LogIn, LogOut, Cloud
+  LayoutDashboard, Truck, History, Settings, Package, Menu, X, CheckCircle, LogIn, LogOut, Cloud, AlertTriangle, Database
 } from 'lucide-react';
 
 import { Tire, Transaction, Vehicle, ViewState } from './types';
@@ -28,11 +28,23 @@ function App() {
   
   const [notification, setNotification] = useState<{message: string, type: 'success'|'error'} | null>(null);
   
+  // System State
+  const [dbStatus, setDbStatus] = useState<'ok' | 'missing_tables'>('ok');
+
   // Auth State
   const { user, loading: authLoading, isAdmin } = useProfile();
 
   // --- REAL-TIME SYNC SETUP ---
   useEffect(() => {
+    // 1. Check DB Connection First
+    dataService.checkDatabaseConnection().then(result => {
+       if (!result.connected && result.error === 'missing_tables') {
+          setDbStatus('missing_tables');
+          setActiveView('settings'); // Redirect to settings for setup
+       }
+    });
+
+    // 2. Subscribe
     const unsubTires = dataService.subscribeTires(setTires);
     const unsubTx = dataService.subscribeTransactions(setTransactions);
     const unsubVehicles = dataService.subscribeVehicles(setVehicles);
@@ -64,6 +76,10 @@ function App() {
 
   const handleManualRefresh = () => {
     // Data refreshes automatically via subscription
+    // Re-check DB status on manual refresh
+    dataService.checkDatabaseConnection().then(result => {
+        setDbStatus(result.connected || result.error !== 'missing_tables' ? 'ok' : 'missing_tables');
+    });
   };
 
   // Views
@@ -224,6 +240,32 @@ function App() {
             <Menu size={24} />
           </button>
         </header>
+        
+        {/* Missing Tables Warning Banner */}
+        {dbStatus === 'missing_tables' && (
+           <div className="bg-red-600 text-white p-3 flex items-center justify-center gap-3 shadow-lg z-50 animate-pulse no-print">
+              <Database size={24} />
+              <div className="text-sm">
+                 <span className="font-bold text-lg">PERHATIAN: Tabel Database Belum Dibuat!</span>
+                 <p className="opacity-90">Aplikasi tidak menemukan tabel <b>'tires'</b>. Tabel 'Bengkel' yang Anda buat tidak sesuai format.</p>
+              </div>
+              {isAdmin ? (
+                  <button 
+                    onClick={() => setActiveView('settings')}
+                    className="bg-white text-red-600 px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-100 transition-colors ml-4"
+                  >
+                    Buka Setup Database
+                  </button>
+              ) : (
+                  <button 
+                    onClick={() => setIsLoginModalOpen(true)}
+                    className="bg-white text-red-600 px-4 py-2 rounded-lg font-bold text-sm hover:bg-slate-100 transition-colors ml-4"
+                  >
+                    Login Admin untuk Setup
+                  </button>
+              )}
+           </div>
+        )}
 
         <div className="flex-1 overflow-y-auto p-4 lg:p-8 custom-scrollbar relative">
            <div className="max-w-7xl mx-auto pb-20">

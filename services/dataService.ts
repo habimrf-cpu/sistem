@@ -6,6 +6,36 @@ const STORAGE_KEYS = {
 };
 
 export const dataService = {
+  // --- SYSTEM CHECK ---
+  checkDatabaseConnection: async (): Promise<{connected: boolean, error?: string}> => {
+    // Coba query sederhana ke tabel utama
+    const { error } = await supabase.from('tires').select('id').limit(1);
+    
+    // Postgres Error 42P01 = undefined_table (Tabel tidak ditemukan)
+    // Supabase Error PGRST205 = relation not found in schema cache
+    if (error && (
+        error.code === '42P01' || 
+        error.code === 'PGRST205' || 
+        error.message?.includes('relation "public.tires" does not exist') ||
+        error.message?.includes('find the table') ||
+        error.message?.includes('schema cache')
+    )) {
+      return { connected: false, error: 'missing_tables' };
+    }
+    
+    // Error koneksi lain
+    if (error && error.message) {
+       console.error("DB Check Error:", JSON.stringify(error, null, 2));
+       // Abaikan error "JWT expired" atau permission saat check awal, anggap connected dulu
+       // agar UI tidak panik, biarkan RLS yang handle nanti.
+       if (!error.message.includes("JSON object requested")) {
+           return { connected: true }; 
+       }
+    }
+
+    return { connected: true };
+  },
+
   // --- REAL-TIME LISTENERS (SUPABASE) ---
   
   subscribeTires: (callback: (tires: Tire[]) => void) => {
@@ -63,10 +93,7 @@ export const dataService = {
 
   saveTire: async (tire: Tire) => {
     const { error } = await supabase.from('tires').upsert(tire);
-    if (error) {
-       console.error("Save Tire Failed:", error.message);
-       throw error;
-    }
+    if (error) throw error;
   },
 
   deleteTire: async (id: number) => {
@@ -89,8 +116,10 @@ export const dataService = {
      
      const { count, error } = await query;
      if (error) {
+        // Jika error tabel belum ada, anggap unique true dulu biar gak blocking UI logic (error akan ditangkap saat save)
+        if (error.code === '42P01' || error.code === 'PGRST205') return true; 
         console.error(error);
-        return false; // Fail safe
+        return false; 
      }
      return count === 0;
   },

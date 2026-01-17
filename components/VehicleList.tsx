@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Vehicle, UserProfile, VEHICLE_TYPES, VEHICLE_GROUPS } from '../types';
 import { formatDateIndo } from '../utils/helpers';
-import { Truck, Plus, Edit, Trash2, X, Search, Save, Upload, Download, MoreVertical, FileSpreadsheet } from 'lucide-react';
+import { Truck, Plus, Edit, Trash2, X, Search, Save, Upload, Download, MoreVertical, FileSpreadsheet, Loader2, AlertTriangle } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import { ConfirmationModal } from './ConfirmationModal';
 import * as XLSX from 'xlsx';
@@ -64,7 +64,7 @@ export const VehicleList: React.FC<VehicleListProps> = ({ vehicles, user, onRefr
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
         const bstr = evt.target?.result;
         if (!bstr) return;
 
@@ -77,33 +77,38 @@ export const VehicleList: React.FC<VehicleListProps> = ({ vehicles, user, onRefr
             let successCount = 0;
             let failCount = 0;
 
-            data.forEach((row: any) => {
+            // Process async to ensure we don't crash loop
+            for (const row of data as any[]) {
                 const plate = row['Plat Nomor'] || row['plateNumber'];
                 const driver = row['Nama Supir'] || row['driver'];
                 
-                if (plate) {
-                    const newVehicle: Vehicle = {
-                        id: Date.now() + Math.random(),
-                        plateNumber: String(plate).toUpperCase(),
-                        vehicleType: row['Tipe Kendaraan'] || VEHICLE_TYPES[0],
-                        department: row['Departemen'] || VEHICLE_GROUPS[0],
-                        driver: driver || 'Belum Ada',
-                        status: 'active',
-                        tireHistory: []
-                    };
-                    dataService.saveVehicle(newVehicle);
-                    successCount++;
-                } else {
+                try {
+                    if (plate) {
+                        const newVehicle: Vehicle = {
+                            id: Date.now() + Math.random(),
+                            plateNumber: String(plate).toUpperCase(),
+                            vehicleType: row['Tipe Kendaraan'] || VEHICLE_TYPES[0],
+                            department: row['Departemen'] || VEHICLE_GROUPS[0],
+                            driver: driver || 'Belum Ada',
+                            status: 'active',
+                            tireHistory: []
+                        };
+                        await dataService.saveVehicle(newVehicle);
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                } catch (e) {
                     failCount++;
                 }
-            });
+            }
 
             alert(`Import Selesai.\nBerhasil: ${successCount}\nGagal/Tanpa Plat: ${failCount}`);
             onRefresh();
 
         } catch (error) {
             console.error(error);
-            alert("Gagal membaca file Excel. Pastikan format sesuai template.");
+            alert("Gagal membaca file Excel atau koneksi database error.");
         } finally {
             if(fileInputRef.current) fileInputRef.current.value = '';
         }
@@ -227,8 +232,8 @@ export const VehicleList: React.FC<VehicleListProps> = ({ vehicles, user, onRefr
         <VehicleFormModal 
            vehicle={editingVehicle} 
            onClose={() => setShowModal(false)}
-           onSave={(v) => {
-              dataService.saveVehicle(v);
+           onSave={async (v) => {
+              await dataService.saveVehicle(v);
               onRefresh();
               setShowModal(false);
            }}
@@ -248,7 +253,7 @@ export const VehicleList: React.FC<VehicleListProps> = ({ vehicles, user, onRefr
 };
 
 // Internal Sub-component: Form Modal
-const VehicleFormModal: React.FC<{ vehicle: Vehicle | null, onClose: () => void, onSave: (v: Vehicle) => void }> = ({ vehicle, onClose, onSave }) => {
+const VehicleFormModal: React.FC<{ vehicle: Vehicle | null, onClose: () => void, onSave: (v: Vehicle) => Promise<void> }> = ({ vehicle, onClose, onSave }) => {
   const [form, setForm] = useState<Partial<Vehicle>>(vehicle || {
      plateNumber: '',
      vehicleType: VEHICLE_TYPES[0],
@@ -257,16 +262,32 @@ const VehicleFormModal: React.FC<{ vehicle: Vehicle | null, onClose: () => void,
      status: 'active',
      tireHistory: []
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
      e.preventDefault();
      if(!form.plateNumber) return;
      
-     onSave({
-        ...form as Vehicle,
-        id: vehicle?.id || Date.now(),
-        plateNumber: form.plateNumber.toUpperCase()
-     });
+     setIsSubmitting(true);
+     setError('');
+
+     try {
+        await onSave({
+            ...form as Vehicle,
+            id: vehicle?.id || Date.now(),
+            plateNumber: form.plateNumber.toUpperCase()
+        });
+     } catch (err: any) {
+        const errMsg = err?.message || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+        
+        if (errMsg.includes("find the table") || errMsg.includes("42P01") || err?.code === 'PGRST205') {
+            setError("Tabel Database belum dibuat. Silakan login admin dan buka menu Pengaturan > Database Setup.");
+        } else {
+            setError(errMsg);
+        }
+        setIsSubmitting(false);
+     }
   };
 
   return (
@@ -276,9 +297,11 @@ const VehicleFormModal: React.FC<{ vehicle: Vehicle | null, onClose: () => void,
             <h3 className="text-xl font-bold text-white">
                {vehicle ? 'Edit Kendaraan' : 'Tambah Kendaraan'}
             </h3>
-            <button onClick={onClose}><X size={24} className="text-slate-400 hover:text-white"/></button>
+            <button onClick={onClose} disabled={isSubmitting}><X size={24} className="text-slate-400 hover:text-white"/></button>
          </div>
          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            {error && <div className="bg-red-500/10 text-red-500 p-3 rounded-lg text-sm mb-4 flex items-center gap-2"><AlertTriangle size={16} className="flex-shrink-0"/> <span>{error}</span></div>}
+            
             <div>
                <label className="block text-sm font-medium text-slate-400 mb-1">Plat Nomor</label>
                <input 
@@ -331,9 +354,9 @@ const VehicleFormModal: React.FC<{ vehicle: Vehicle | null, onClose: () => void,
             </div>
 
             <div className="pt-4 flex justify-end gap-3">
-               <button type="button" onClick={onClose} className="px-4 py-2 text-slate-300 hover:text-white">Batal</button>
-               <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2">
-                  <Save size={16}/> Simpan
+               <button type="button" onClick={onClose} disabled={isSubmitting} className="px-4 py-2 text-slate-300 hover:text-white">Batal</button>
+               <button type="submit" disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2">
+                  {isSubmitting ? <Loader2 size={16} className="animate-spin"/> : <Save size={16}/>} Simpan
                </button>
             </div>
          </form>
