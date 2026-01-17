@@ -1,3 +1,4 @@
+
 export interface Tire {
   id: number;
   serialNumber: string;
@@ -50,6 +51,13 @@ export interface AppSettings {
   stockAlertThreshold: number;
   reminderStockOpname: boolean;
   lastStockOpname?: string;
+}
+
+export interface UserProfile {
+  email: string;
+  name: string;
+  picture: string;
+  role: 'admin' | 'user' | 'guest';
 }
 
 export type ViewState = 'dashboard' | 'stock' | 'transactions' | 'vehicles' | 'settings';

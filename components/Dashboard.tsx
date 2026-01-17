@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Tire, Transaction } from '../types';
-import { Package, TrendingDown, Clock, ArrowUpRight, ArrowDownRight, Layers, Tag, ChevronRight, Info } from 'lucide-react';
+import { Package, TrendingDown, Clock, ArrowUpRight, ArrowDownRight, Layers, Tag, ChevronRight, Info, Calendar, Hash } from 'lucide-react';
 
 interface DashboardProps {
   tires: Tire[];
@@ -31,20 +31,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => 
     return bySize;
   }, [tires]);
 
-  // Calculate Brand Breakdown based on Selected Size
-  const brandDetailForSize = useMemo(() => {
+  // Get Specific Tires List for Selected Size
+  const tiresForSize = useMemo(() => {
     if (!selectedSize) return [];
 
-    const available = tires.filter(t => t.status === 'available' && t.size === selectedSize);
-    const byBrand: Record<string, number> = {};
-
-    available.forEach(t => {
-       const brand = (t.brand || 'Tanpa Merk').toUpperCase();
-       byBrand[brand] = (byBrand[brand] || 0) + 1;
-    });
-
-    // Return as array sorted by count
-    return (Object.entries(byBrand) as [string, number][]).sort(([,a], [,b]) => b - a);
+    return tires
+      .filter(t => t.status === 'available' && t.size === selectedSize)
+      // Sort by dateIn descending (newest first)
+      .sort((a, b) => new Date(b.dateIn).getTime() - new Date(a.dateIn).getTime());
   }, [tires, selectedSize]);
 
   // Get recent 10 transactions
@@ -81,14 +75,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         
         {/* Card 1: Stock per Size (Interactive) */}
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg flex flex-col">
-           <div className="flex items-center gap-2 mb-4 border-b border-slate-700 pb-3">
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg flex flex-col h-[400px]">
+           <div className="flex items-center gap-2 mb-4 border-b border-slate-700 pb-3 flex-shrink-0">
               <Layers size={18} className="text-purple-400"/>
               <h4 className="font-bold text-white">Stok per Ukuran</h4>
            </div>
            
-           <div className="space-y-2 flex-1">
-              <p className="text-xs text-slate-500 mb-2">Klik pada ukuran untuk melihat rincian merk.</p>
+           <div className="space-y-2 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              <p className="text-xs text-slate-500 mb-2">Klik pada ukuran untuk melihat daftar serial number.</p>
               {Object.keys(sizeBreakdown).length > 0 ? (
                   (Object.entries(sizeBreakdown) as [string, number][])
                     .sort(([,a], [,b]) => b - a)
@@ -123,44 +117,51 @@ export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => 
            </div>
         </div>
 
-        {/* Card 2: Brand Details (Dynamic) */}
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg flex flex-col">
-           <div className="flex items-center gap-2 mb-4 border-b border-slate-700 pb-3">
-              <Tag size={18} className="text-blue-400"/>
-              <h4 className="font-bold text-white">
-                {selectedSize ? `Rincian: ${selectedSize}` : 'Rincian Merek'}
+        {/* Card 2: Serial Number List (Details) */}
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg flex flex-col h-[400px]">
+           <div className="flex items-center gap-2 mb-4 border-b border-slate-700 pb-3 flex-shrink-0">
+              <Hash size={18} className="text-blue-400"/>
+              <h4 className="font-bold text-white truncate">
+                {selectedSize ? `Rincian: ${selectedSize}` : 'Rincian Serial Number'}
               </h4>
            </div>
 
-           <div className="flex-1">
+           <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
              {selectedSize ? (
-                <div className="space-y-3 animate-fade-in">
-                  {brandDetailForSize.length > 0 ? (
-                    brandDetailForSize.map(([brand, count]) => {
-                      // Calculate percentage relative to the selected size total
-                      const totalForSize = brandDetailForSize.reduce((acc, [,c]) => acc + c, 0);
-                      const percent = (count / totalForSize) * 100;
-                      
-                      return (
-                        <div key={brand} className="flex justify-between items-center text-sm p-2 hover:bg-slate-750 rounded transition-colors">
-                            <span className="text-slate-300 font-medium">{brand}</span>
-                            <div className="flex items-center">
-                                <div className="w-24 h-2 bg-slate-700 rounded-full mr-3 overflow-hidden">
-                                    <div className="h-full bg-blue-500" style={{ width: `${percent}%` }}></div>
+                <div className="space-y-2 animate-fade-in">
+                  {tiresForSize.length > 0 ? (
+                    tiresForSize.map((tire) => (
+                        <div key={tire.id} className="p-3 bg-slate-900/50 rounded-lg border border-slate-700/50 hover:bg-slate-700 transition-colors group">
+                            <div className="flex justify-between items-start mb-1">
+                                <span className="font-mono font-bold text-white text-sm group-hover:text-blue-400 transition-colors">
+                                    {tire.serialNumber}
+                                </span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                                    tire.condition === 'Baru' 
+                                        ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' 
+                                        : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                                }`}>
+                                    {tire.condition}
+                                </span>
+                            </div>
+                            <div className="flex justify-between items-end text-xs text-slate-400">
+                                <div className="flex flex-col">
+                                    <span className="flex items-center gap-1"><Tag size={10} /> {tire.brand}</span>
                                 </div>
-                                <span className="font-mono font-bold text-white bg-slate-700 px-2 py-0.5 rounded min-w-[30px] text-center border border-slate-600">{count}</span>
+                                <div className="flex items-center gap-1 opacity-70">
+                                    <Calendar size={10} /> {tire.dateIn}
+                                </div>
                             </div>
                         </div>
-                      );
-                    })
+                    ))
                   ) : (
                     <p className="text-slate-500 text-sm italic text-center py-8">Tidak ada data untuk ukuran ini.</p>
                   )}
                 </div>
              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500 min-h-[200px]">
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
                    <Info size={48} className="text-slate-700 mb-3" />
-                   <p className="text-sm">Pilih salah satu ukuran ban di sebelah kiri untuk melihat rincian stok berdasarkan merek.</p>
+                   <p className="text-sm">Pilih ukuran ban di sebelah kiri untuk melihat daftar Nomor Seri yang tersedia.</p>
                 </div>
              )}
            </div>

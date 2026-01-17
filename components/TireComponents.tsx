@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Tire, Vehicle, SIZE_OPTIONS, Transaction } from '../types';
+import { Tire, Vehicle, SIZE_OPTIONS, Transaction, UserProfile } from '../types';
 import { 
   Search, Eye, Edit, Trash2, QrCode, Plus, ArrowUpRight, ArrowDownRight, 
   X, AlertTriangle, FileSpreadsheet, Printer, Archive, Save, Upload, Download
@@ -17,12 +17,13 @@ const getQrUrl = (text: string) => `https://api.qrserver.com/v1/create-qr-code/?
 interface TireListProps {
   tires: Tire[];
   vehicles: Vehicle[];
+  user: UserProfile | null;
   onRefresh: () => void;
   onAddTransaction: (t: Transaction) => void;
 }
 
 // --- Main Component ---
-export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefresh, onAddTransaction }) => {
+export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, onRefresh, onAddTransaction }) => {
   const [filter, setFilter] = useState({ search: '', status: 'all', size: 'all' });
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -38,6 +39,9 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
   
   // File Input Ref for Import
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Check Role
+  const isAdmin = user?.role === 'admin';
 
   // Filter Logic
   const filteredData = useMemo(() => {
@@ -69,8 +73,6 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
   const confirmDelete = () => {
     if (confirmDeleteId === -1) {
         // Bulk delete
-        dataService.deleteTire(0); // Dummy call if needed, but we use the loop or new service method
-        // Using new method if available, or fallback to loop
         if (dataService.deleteTires) {
             dataService.deleteTires(selectedIds);
         } else {
@@ -173,7 +175,8 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
         if (!bstr) return;
 
         try {
-            const wb = XLSX.read(bstr, { type: 'binary' });
+            // Updated to use cellDates: true for better date handling
+            const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
             const wsname = wb.SheetNames[0];
             const ws = wb.Sheets[wsname];
             const data = XLSX.utils.sheet_to_json(ws);
@@ -183,6 +186,28 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
 
             data.forEach((row: any) => {
                 const sn = row['Nomor Seri'] || row['serialNumber'];
+                
+                // --- DATE PARSING FIX ---
+                const rawDate = row['Tanggal Masuk (YYYY-MM-DD)'] || row['dateIn'];
+                let finalDate = new Date().toISOString().split('T')[0];
+
+                if (rawDate) {
+                  if (rawDate instanceof Date) {
+                    // If library parsed it as Date object, format it manually to YYYY-MM-DD local
+                    const year = rawDate.getFullYear();
+                    const month = String(rawDate.getMonth() + 1).padStart(2, '0');
+                    const day = String(rawDate.getDate()).padStart(2, '0');
+                    finalDate = `${year}-${month}-${day}`;
+                  } else if (typeof rawDate === 'number') {
+                    // Fallback if it comes as number (Excel Serial Date)
+                    // Convert Excel date to JS date
+                    const date = new Date((rawDate - 25569) * 86400 * 1000);
+                    finalDate = date.toISOString().split('T')[0];
+                  } else {
+                    // String fallback
+                    finalDate = String(rawDate);
+                  }
+                }
                 
                 // Basic Validation
                 if (sn && dataService.isSerialUnique(sn)) {
@@ -194,7 +219,7 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
                         condition: row['Kondisi'] || 'Baru',
                         status: 'available',
                         location: 'Bengkel Krc',
-                        dateIn: row['Tanggal Masuk (YYYY-MM-DD)'] || new Date().toISOString().split('T')[0],
+                        dateIn: finalDate,
                         createdBy: 'Import',
                         updatedAt: Date.now()
                     };
@@ -265,19 +290,21 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
         </div>
 
         <div className="flex gap-2 w-full md:w-auto">
-          {selectedIds.length > 0 ? (
+          {selectedIds.length > 0 && isAdmin ? (
              <button onClick={handleBulkDeleteClick} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors animate-fade-in">
                <Trash2 size={16} /> Hapus ({selectedIds.length})
              </button>
           ) : (
-            <>
-                <button onClick={() => setShowModal('in')} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                    <Plus size={16} /> Ban Masuk
-                </button>
-                <button onClick={() => setShowModal('out')} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                    <ArrowUpRight size={16} /> Ban Keluar
-                </button>
-            </>
+            isAdmin && (
+                <>
+                    <button onClick={() => setShowModal('in')} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                        <Plus size={16} /> Ban Masuk
+                    </button>
+                    <button onClick={() => setShowModal('out')} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                        <ArrowUpRight size={16} /> Ban Keluar
+                    </button>
+                </>
+            )
           )}
           
            <div className="dropdown relative group">
@@ -289,9 +316,11 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
                   <Printer size={16}/> Cetak (Print)
                 </button>
                 <div className="p-2 text-xs text-slate-500 uppercase font-bold">Import / Export</div>
-                <button onClick={handleImportClick} className="flex items-center gap-2 w-full px-4 py-2 text-sm text-emerald-400 hover:bg-slate-700 text-left">
-                  <Upload size={16}/> Import Excel
-                </button>
+                {isAdmin && (
+                   <button onClick={handleImportClick} className="flex items-center gap-2 w-full px-4 py-2 text-sm text-emerald-400 hover:bg-slate-700 text-left">
+                    <Upload size={16}/> Import Excel
+                   </button>
+                )}
                 <button onClick={handleDownloadTemplate} className="flex items-center gap-2 w-full px-4 py-2 text-sm text-slate-400 hover:bg-slate-700 text-left">
                   <Download size={16}/> Template Import
                 </button>
@@ -376,9 +405,15 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
                   <td className="px-6 py-4 no-print">
                     <div className="flex justify-center gap-2">
                       <button onClick={() => {setSelectedTire(tire); setShowModal('detail');}} className="p-1.5 hover:bg-slate-700 rounded text-blue-400" title="Detail"><Eye size={16}/></button>
-                      <button onClick={() => {setSelectedTire(tire); setShowModal('edit');}} className="p-1.5 hover:bg-slate-700 rounded text-amber-400" title="Edit Serial Number"><Edit size={16}/></button>
                       <button onClick={() => {setSelectedTire(tire); setShowModal('qr');}} className="p-1.5 hover:bg-slate-700 rounded text-slate-300" title="QR Code"><QrCode size={16}/></button>
-                      <button onClick={(e) => {e.stopPropagation(); handleDeleteClick(tire.id);}} className="p-1.5 hover:bg-slate-700 rounded text-red-400" title="Hapus"><Trash2 size={16}/></button>
+                      
+                      {/* Protected Actions */}
+                      {isAdmin && (
+                         <>
+                            <button onClick={() => {setSelectedTire(tire); setShowModal('edit');}} className="p-1.5 hover:bg-slate-700 rounded text-amber-400" title="Edit Serial Number"><Edit size={16}/></button>
+                            <button onClick={(e) => {e.stopPropagation(); handleDeleteClick(tire.id);}} className="p-1.5 hover:bg-slate-700 rounded text-red-400" title="Hapus"><Trash2 size={16}/></button>
+                         </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -411,8 +446,8 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
         </div>
       </div>
 
-      {/* MODALS */}
-      {showModal === 'in' && (
+      {/* MODALS - Wrapped with Admin Checks (Except Detail & QR) */}
+      {showModal === 'in' && isAdmin && (
         <TireFormModal type="in" onClose={() => setShowModal(null)} onSave={(t) => {
              dataService.saveTire(t);
              dataService.addTransaction({
@@ -423,7 +458,7 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
                  size: t.size,
                  condition: t.condition,
                  date: t.dateIn,
-                 user: 'Admin',
+                 user: user?.name || 'Admin',
                  timestamp: Date.now(),
                  notes: 'Ban Baru Masuk'
              });
@@ -433,7 +468,7 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
         }} />
       )}
 
-      {showModal === 'edit' && selectedTire && (
+      {showModal === 'edit' && selectedTire && isAdmin && (
         <TireEditModal tire={selectedTire} onClose={() => {setShowModal(null); setSelectedTire(null);}} onSave={(t) => {
             dataService.saveTire(t);
             onRefresh();
@@ -442,14 +477,14 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
         }} />
       )}
 
-      {showModal === 'out' && (
+      {showModal === 'out' && isAdmin && (
         <TireOutModal 
           tires={tires} 
           vehicles={vehicles}
           onClose={() => setShowModal(null)} 
           onSave={(updatedTire, tx) => {
             dataService.saveTire(updatedTire);
-            dataService.addTransaction(tx);
+            dataService.addTransaction({...tx, user: user?.name || 'Admin'});
             // Update vehicle history if needed
             const vehicle = vehicles.find(v => v.plateNumber === updatedTire.plateNumber);
             if(vehicle) {
@@ -490,7 +525,7 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, onRefres
 };
 
 // --- Sub-components (Modals) ---
-
+// (No changes needed in modals internal logic, just parent rendering logic)
 const TireFormModal: React.FC<{ type: 'in', onClose: () => void, onSave: (t: Tire) => void }> = ({ onClose, onSave }) => {
   const [form, setForm] = useState<Partial<Tire>>({
     serialNumber: '',

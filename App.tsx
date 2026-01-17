@@ -2,14 +2,21 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { 
   LayoutDashboard, Truck, History, Settings, Package, Menu, X, Database, LogOut, CheckCircle, Edit, Trash2,
-  Search, Plus, Upload, Download, FileSpreadsheet
+  Search, Plus, Upload, Download, FileSpreadsheet, User, LogIn
 } from 'lucide-react';
-import { Tire, Transaction, Vehicle, ViewState, VEHICLE_GROUPS, VEHICLE_TYPES } from './types';
+import { GoogleOAuthProvider, GoogleLogin, googleLogout } from '@react-oauth/google';
+import { jwtDecode } from 'jwt-decode';
+
+import { Tire, Transaction, Vehicle, ViewState, VEHICLE_GROUPS, VEHICLE_TYPES, UserProfile } from './types';
 import { dataService } from './services/dataService';
+import { authService } from './services/authService';
 import { Dashboard } from './components/Dashboard';
 import { TireManager } from './components/TireComponents';
 import { ConfirmationModal } from './components/ConfirmationModal';
 import { Logo } from './components/Logo';
+
+// Client ID untuk Google OAuth (Bengkel Kerinci)
+const GOOGLE_CLIENT_ID = "1007543822536-dmnmdepgjqg055rmnn95gsg76h8iaqsb.apps.googleusercontent.com";
 
 function App() {
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
@@ -18,6 +25,9 @@ function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [notification, setNotification] = useState<{message: string, type: 'success'|'error'} | null>(null);
+  
+  // Auth State
+  const [user, setUser] = useState<UserProfile | null>(null);
 
   // Load Data
   const refreshData = () => {
@@ -28,6 +38,9 @@ function App() {
 
   useEffect(() => {
     refreshData();
+    // Check local storage for persisted session if needed, 
+    // but for OAuth best practice usually we rely on the provider re-auth or cookie.
+    // Here we start as Guest until login.
   }, []);
 
   // Notification helper
@@ -42,6 +55,37 @@ function App() {
       setNotification({ message: msg, type });
   };
 
+  // Auth Handlers
+  const handleLoginSuccess = (credentialResponse: any) => {
+    try {
+      const decoded: any = jwtDecode(credentialResponse.credential);
+      const email = decoded.email;
+      const role = authService.getRole(email);
+      
+      const userProfile: UserProfile = {
+        email: email,
+        name: decoded.name,
+        picture: decoded.picture,
+        role: role
+      };
+
+      setUser(userProfile);
+      showNotification(`Selamat datang, ${decoded.name} (${role === 'admin' ? 'Admin' : 'User'})`);
+    } catch (error) {
+      console.error('Login Failed', error);
+      showNotification('Gagal login', 'error');
+    }
+  };
+
+  const handleLogout = () => {
+    googleLogout();
+    setUser(null);
+    setActiveView('dashboard'); // Reset to safe view
+    showNotification('Berhasil logout');
+  };
+
+  const isAdmin = user?.role === 'admin';
+
   // Views
   const renderContent = () => {
     switch(activeView) {
@@ -51,65 +95,73 @@ function App() {
         return <TireManager 
                  tires={tires} 
                  vehicles={vehicles}
+                 user={user} // Pass user info
                  onRefresh={() => {refreshData(); showNotification("Data berhasil diperbarui");}} 
                  onAddTransaction={(t) => {
-                    // Transaction logic handled in component but we can show toast here
+                    // Transaction logic handled in component
                  }}
                />;
       case 'transactions':
         return <TransactionHistory transactions={transactions} />;
       case 'vehicles':
-        return <VehicleList vehicles={vehicles} onRefresh={() => {refreshData(); showNotification("Data kendaraan diperbarui");}} />;
+        return <VehicleList 
+                  vehicles={vehicles} 
+                  user={user} // Pass user info
+                  onRefresh={() => {refreshData(); showNotification("Data kendaraan diperbarui");}} 
+               />;
       case 'settings':
-        return <SettingsView onRestore={refreshData} />;
+        return isAdmin ? <SettingsView onRestore={refreshData} /> : <div className="text-center p-10 text-slate-500">Akses Ditolak</div>;
       default:
         return <Dashboard tires={tires} transactions={transactions} />;
     }
   };
 
-  const NavItem = ({ view, icon: Icon, label }: { view: ViewState, icon: any, label: string }) => (
-    <button
-      onClick={() => { setActiveView(view); setIsSidebarOpen(false); }}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors mb-1 ${
-        activeView === view 
-          ? 'bg-blue-600 text-white shadow-lg' 
-          : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-      }`}
-    >
-      <Icon size={20} />
-      <span className="font-medium">{label}</span>
-    </button>
-  );
+  const NavItem = ({ view, icon: Icon, label, hidden = false }: { view: ViewState, icon: any, label: string, hidden?: boolean }) => {
+    if (hidden) return null;
+    return (
+      <button
+        onClick={() => { setActiveView(view); setIsSidebarOpen(false); }}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors mb-1 ${
+          activeView === view 
+            ? 'bg-blue-600 text-white shadow-lg' 
+            : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+        }`}
+      >
+        <Icon size={20} />
+        <span className="font-medium">{label}</span>
+      </button>
+    );
+  };
 
   // --- MAIN APP ---
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-200 font-sans flex overflow-hidden">
-      
-      {/* Toast Notification */}
-      {notification && (
-        <div className={`fixed top-6 right-6 z-[100] px-6 py-3 rounded-lg shadow-xl flex items-center gap-2 animate-bounce ${
-            notification.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
-        } no-print`}>
-            {notification.type === 'success' ? <CheckCircle size={20} /> : <X size={20} />}
-            {notification.message}
-        </div>
-      )}
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+      <div className="min-h-screen bg-slate-900 text-slate-200 font-sans flex overflow-hidden">
+        
+        {/* Toast Notification */}
+        {notification && (
+          <div className={`fixed top-6 right-6 z-[100] px-6 py-3 rounded-lg shadow-xl flex items-center gap-2 animate-bounce ${
+              notification.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+          } no-print`}>
+              {notification.type === 'success' ? <CheckCircle size={20} /> : <X size={20} />}
+              {notification.message}
+          </div>
+        )}
 
-      {/* Sidebar Mobile Overlay */}
-      {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-20 lg:hidden backdrop-blur-sm no-print"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
+        {/* Sidebar Mobile Overlay */}
+        {isSidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-black/50 z-20 lg:hidden backdrop-blur-sm no-print"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
 
-      {/* Sidebar */}
-      <aside className={`
-        fixed lg:static inset-y-0 left-0 z-30 w-64 bg-slate-950 border-r border-slate-800 
-        transform transition-transform duration-300 ease-in-out no-print
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-      `}>
-        <div className="h-full flex flex-col">
+        {/* Sidebar */}
+        <aside className={`
+          fixed lg:static inset-y-0 left-0 z-30 w-64 bg-slate-950 border-r border-slate-800 
+          transform transition-transform duration-300 ease-in-out no-print flex flex-col
+          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}>
           <div className="p-6 border-b border-slate-800 flex items-center gap-3">
              <Logo className="w-10 h-10 text-blue-500" />
              <div>
@@ -125,64 +177,103 @@ function App() {
             <NavItem view="transactions" icon={History} label="Riwayat Transaksi" />
             <NavItem view="vehicles" icon={Truck} label="Data Kendaraan" />
             
-            <p className="text-xs font-semibold text-slate-500 uppercase mt-8 mb-4 px-2">Sistem</p>
-            <NavItem view="settings" icon={Settings} label="Pengaturan & Backup" />
+            {/* Hanya Tampilkan Setting jika Admin */}
+            {isAdmin && (
+              <>
+                <p className="text-xs font-semibold text-slate-500 uppercase mt-8 mb-4 px-2">Sistem</p>
+                <NavItem view="settings" icon={Settings} label="Pengaturan & Backup" />
+              </>
+            )}
           </nav>
 
-          <div className="p-4 border-t border-slate-800">
-             <div className="bg-slate-900 rounded-lg p-3 text-center">
-                <p className="text-xs text-slate-500">Developed by</p>
-                <p className="text-sm font-bold text-blue-400">Habifeb</p>
+          {/* User Profile / Login Section */}
+          <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+             {!user ? (
+               <div className="flex flex-col gap-2">
+                 <p className="text-xs text-slate-500 text-center mb-1">Login untuk Akses Admin</p>
+                 <div className="flex justify-center">
+                    <GoogleLogin
+                      onSuccess={handleLoginSuccess}
+                      onError={() => showNotification('Login Failed', 'error')}
+                      theme="filled_black"
+                      shape="circle"
+                      size="medium"
+                      text="signin_with"
+                    />
+                 </div>
+               </div>
+             ) : (
+               <div className="flex items-center gap-3">
+                 <img src={user.picture} alt="Profile" className="w-10 h-10 rounded-full border border-slate-600" />
+                 <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white truncate">{user.name}</p>
+                    <p className="text-xs text-slate-400 truncate capitalize">{user.role}</p>
+                 </div>
+                 <button onClick={handleLogout} className="p-2 hover:bg-slate-700 rounded-full text-slate-400 hover:text-red-400 transition-colors" title="Logout">
+                    <LogOut size={16} />
+                 </button>
+               </div>
+             )}
+          </div>
+
+          <div className="p-3 bg-slate-950 text-center">
+             <div className="flex items-center justify-center gap-1 text-[10px] text-slate-600">
+               <span>Developed by</span>
+               <span className="font-bold text-blue-900">Habifeb</span>
              </div>
           </div>
-        </div>
-      </aside>
+        </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-900">
-        {/* Mobile Header */}
-        <header className="lg:hidden h-16 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 z-10 no-print">
-           <button onClick={() => setIsSidebarOpen(true)} className="text-slate-300">
-             <Menu size={24} />
-           </button>
-           <div className="flex items-center gap-2">
-              <Logo className="w-6 h-6" />
-              <span className="font-bold text-white">Bengkel Kerinci</span>
-           </div>
-           <div className="w-6" /> 
-        </header>
+        {/* Main Content */}
+        <main className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-900">
+          {/* Mobile Header */}
+          <header className="lg:hidden h-16 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 z-10 no-print">
+             <button onClick={() => setIsSidebarOpen(true)} className="text-slate-300">
+               <Menu size={24} />
+             </button>
+             <div className="flex items-center gap-2">
+                <Logo className="w-6 h-6" />
+                <span className="font-bold text-white">Bengkel Kerinci</span>
+             </div>
+             {user ? (
+                <img src={user.picture} alt="User" className="w-8 h-8 rounded-full" />
+             ) : (
+                <User size={24} className="text-slate-500" />
+             )}
+          </header>
 
-        {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 print:p-0 print:overflow-visible">
-           <div className="max-w-7xl mx-auto pb-10 print:pb-0 print:max-w-none">
-              <div className="mb-6 flex justify-between items-end no-print">
-                <div>
-                   <h2 className="text-2xl font-bold text-white capitalize">
-                      {activeView === 'stock' ? 'Manajemen Stok Ban' : 
-                       activeView === 'transactions' ? 'Riwayat Transaksi' :
-                       activeView === 'vehicles' ? 'Database Kendaraan' : 
-                       activeView === 'settings' ? 'Pengaturan' : 'Dashboard'}
-                   </h2>
-                   <p className="text-slate-400 text-sm mt-1">
-                      {new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                   </p>
+          {/* Scrollable Content Area */}
+          <div className="flex-1 overflow-y-auto p-4 md:p-8 print:p-0 print:overflow-visible">
+             <div className="max-w-7xl mx-auto pb-10 print:pb-0 print:max-w-none">
+                <div className="mb-6 flex justify-between items-end no-print">
+                  <div>
+                     <h2 className="text-2xl font-bold text-white capitalize">
+                        {activeView === 'stock' ? 'Manajemen Stok Ban' : 
+                         activeView === 'transactions' ? 'Riwayat Transaksi' :
+                         activeView === 'vehicles' ? 'Database Kendaraan' : 
+                         activeView === 'settings' ? 'Pengaturan' : 'Dashboard'}
+                     </h2>
+                     <p className="text-slate-400 text-sm mt-1">
+                        {new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                     </p>
+                  </div>
+                  <div className="hidden md:block">
+                    <span className="text-slate-500 text-sm">Lokasi: </span>
+                    <span className="text-white font-semibold bg-slate-800 px-3 py-1 rounded-full text-sm">Bengkel Krc</span>
+                  </div>
                 </div>
-                <div className="hidden md:block">
-                  <span className="text-slate-500 text-sm">Lokasi: </span>
-                  <span className="text-white font-semibold bg-slate-800 px-3 py-1 rounded-full text-sm">Bengkel Krc</span>
-                </div>
-              </div>
-              
-              {renderContent()}
-           </div>
-           
-           {/* Watermark Footer */}
-           <div className="mt-auto py-6 text-center text-xs text-slate-600 border-t border-slate-800/50 no-print">
-             &copy; {new Date().getFullYear()} Aplikasi ini dikembangkan oleh Habifeb
-           </div>
-        </div>
-      </main>
-    </div>
+                
+                {renderContent()}
+             </div>
+             
+             {/* Watermark Footer */}
+             <div className="mt-auto py-6 text-center text-xs text-slate-600 border-t border-slate-800/50 no-print">
+               &copy; {new Date().getFullYear()} Aplikasi ini dikembangkan oleh Habifeb
+             </div>
+          </div>
+        </main>
+      </div>
+    </GoogleOAuthProvider>
   );
 }
 
@@ -231,12 +322,15 @@ const TransactionHistory = ({ transactions }: { transactions: Transaction[] }) =
   );
 };
 
-const VehicleList = ({ vehicles, onRefresh }: { vehicles: Vehicle[], onRefresh: () => void }) => {
+const VehicleList = ({ vehicles, user, onRefresh }: { vehicles: Vehicle[], user: UserProfile | null, onRefresh: () => void }) => {
    const [searchTerm, setSearchTerm] = useState('');
    const [isFormOpen, setIsFormOpen] = useState(false);
    const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
    const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
    const fileInputRef = useRef<HTMLInputElement>(null);
+
+   // Permission Check
+   const isAdmin = user?.role === 'admin';
 
    const filteredVehicles = vehicles.filter(v => 
       v.plateNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -353,18 +447,26 @@ const VehicleList = ({ vehicles, onRefresh }: { vehicles: Vehicle[], onRefresh: 
           </div>
           
           <div className="flex flex-wrap gap-2 w-full md:w-auto">
-             <button onClick={() => {setEditingVehicle(null); setIsFormOpen(true);}} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-                <Plus size={16} /> Tambah
-             </button>
-             <button onClick={handleImportClick} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-                <Upload size={16} /> Import
-             </button>
+             {isAdmin && (
+                <>
+                   <button onClick={() => {setEditingVehicle(null); setIsFormOpen(true);}} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                      <Plus size={16} /> Tambah
+                   </button>
+                   <button onClick={handleImportClick} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                      <Upload size={16} /> Import
+                   </button>
+                </>
+             )}
+             
+             {/* Read only buttons */}
              <button onClick={handleExportExcel} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
                 <FileSpreadsheet size={16} /> Export
              </button>
-             <button onClick={handleDownloadTemplate} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-2 rounded-lg" title="Download Template">
-                <Download size={18} />
-             </button>
+             {isAdmin && (
+                <button onClick={handleDownloadTemplate} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-2 rounded-lg" title="Download Template">
+                    <Download size={18} />
+                </button>
+             )}
           </div>
        </div>
 
@@ -378,7 +480,7 @@ const VehicleList = ({ vehicles, onRefresh }: { vehicles: Vehicle[], onRefresh: 
                      <th className="px-6 py-4">Supir</th>
                      <th className="px-6 py-4">Tipe & Dept</th>
                      <th className="px-6 py-4">Ban Terakhir</th>
-                     <th className="px-6 py-4 text-center">Aksi</th>
+                     {isAdmin && <th className="px-6 py-4 text-center">Aksi</th>}
                   </tr>
                </thead>
                <tbody className="divide-y divide-slate-700">
@@ -399,16 +501,18 @@ const VehicleList = ({ vehicles, onRefresh }: { vehicles: Vehicle[], onRefresh: 
                               </div>
                            ) : <span className="text-slate-600 italic">Belum ada</span>}
                         </td>
-                        <td className="px-6 py-4">
-                           <div className="flex justify-center gap-2">
-                              <button onClick={() => {setEditingVehicle(v); setIsFormOpen(true);}} className="p-1.5 hover:bg-slate-700 rounded text-blue-400" title="Edit"><Edit size={16}/></button>
-                              <button onClick={() => handleDeleteClick(v.id)} className="p-1.5 hover:bg-slate-700 rounded text-red-400" title="Hapus"><Trash2 size={16}/></button>
-                           </div>
-                        </td>
+                        {isAdmin && (
+                           <td className="px-6 py-4">
+                              <div className="flex justify-center gap-2">
+                                 <button onClick={() => {setEditingVehicle(v); setIsFormOpen(true);}} className="p-1.5 hover:bg-slate-700 rounded text-blue-400" title="Edit"><Edit size={16}/></button>
+                                 <button onClick={() => handleDeleteClick(v.id)} className="p-1.5 hover:bg-slate-700 rounded text-red-400" title="Hapus"><Trash2 size={16}/></button>
+                              </div>
+                           </td>
+                        )}
                      </tr>
                   )) : (
                      <tr>
-                        <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                        <td colSpan={isAdmin ? 5 : 4} className="px-6 py-12 text-center text-slate-500">
                            Tidak ada data kendaraan yang ditemukan.
                         </td>
                      </tr>
@@ -419,7 +523,7 @@ const VehicleList = ({ vehicles, onRefresh }: { vehicles: Vehicle[], onRefresh: 
        </div>
 
        {/* Combined Add/Edit Modal */}
-       {isFormOpen && (
+       {isFormOpen && isAdmin && (
          <VehicleFormModal 
             vehicle={editingVehicle}
             onClose={() => {setIsFormOpen(false); setEditingVehicle(null);}}
