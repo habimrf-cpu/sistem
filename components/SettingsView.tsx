@@ -1,9 +1,43 @@
-import React, { useRef } from 'react';
-import { Download, Upload, Database, AlertTriangle, Cloud } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Download, Upload, Database, AlertTriangle, Cloud, Lock, User, Save } from 'lucide-react';
 import { dataService } from '../services/dataService';
+import { authService } from '../services/authService';
+import { useProfile } from '../hooks/useProfile';
 
 export const SettingsView: React.FC<{ onRestore: () => void }> = ({ onRestore }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { user } = useProfile();
+  
+  // Account State
+  const [newUsername, setNewUsername] = useState(user?.name || '');
+  const [newPassword, setNewPassword] = useState('');
+  const [accountMsg, setAccountMsg] = useState<{text: string, type: 'success'|'error'} | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleUpdateAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAccountMsg(null);
+    setIsSaving(true);
+
+    try {
+       // Hanya kirim field yang diisi
+       const u = newUsername !== user?.name ? newUsername : undefined;
+       const p = newPassword ? newPassword : undefined;
+
+       if (!u && !p) {
+          setIsSaving(false);
+          return;
+       }
+
+       await authService.updateAccount(u, p);
+       setAccountMsg({ text: 'Akun berhasil diperbarui! Silakan login ulang jika mengubah username.', type: 'success' });
+       setNewPassword('');
+    } catch (err: any) {
+       setAccountMsg({ text: 'Gagal update akun: ' + err.message, type: 'error' });
+    } finally {
+       setIsSaving(false);
+    }
+  };
 
   const handleBackup = async () => {
     const data = await dataService.createBackup();
@@ -35,21 +69,60 @@ export const SettingsView: React.FC<{ onRestore: () => void }> = ({ onRestore })
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
+    <div className="max-w-2xl mx-auto space-y-8 animate-fade-in pb-10">
       
-      <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-4 flex gap-4">
-        <Cloud className="text-emerald-500 flex-shrink-0" size={24} />
-        <div>
-            <h3 className="font-bold text-emerald-500 mb-1">Status Koneksi: Aman</h3>
-            <p className="text-emerald-200 text-sm">
-              Sistem menggunakan Supabase. Backup harian tetap disarankan untuk keamanan ekstra.
-            </p>
-        </div>
-      </div>
-
+      {/* Account Management */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-lg">
          <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <Database className="text-blue-500" /> Transfer Data & Backup
+            <User className="text-blue-500" /> Pengaturan Akun Admin
+         </h2>
+         <form onSubmit={handleUpdateAccount} className="space-y-4">
+            {accountMsg && (
+               <div className={`p-3 rounded-lg text-sm ${accountMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                  {accountMsg.text}
+               </div>
+            )}
+            
+            <div>
+               <label className="block text-sm font-medium text-slate-400 mb-1">Username Baru</label>
+               <input 
+                  type="text" 
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white"
+                  value={newUsername}
+                  onChange={e => setNewUsername(e.target.value)}
+                  placeholder="admin"
+               />
+            </div>
+
+            <div>
+               <label className="block text-sm font-medium text-slate-400 mb-1">Password Baru</label>
+               <input 
+                  type="password" 
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  placeholder="Kosongkan jika tidak ingin mengubah"
+               />
+            </div>
+
+            <div className="flex justify-end">
+               <button 
+                 type="submit" 
+                 disabled={isSaving}
+                 className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50"
+               >
+                  <Save size={16}/> {isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
+               </button>
+            </div>
+         </form>
+      </div>
+
+      <div className="border-t border-slate-800"></div>
+
+      {/* Backup Restore Section */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 shadow-lg">
+         <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+            <Database className="text-emerald-500" /> Transfer Data & Backup
          </h2>
          <p className="text-slate-400 text-sm mb-6 bg-slate-900 p-4 rounded-lg border border-slate-700">
             Gunakan fitur ini untuk menyimpan salinan data (Backup) atau memindahkan data dari satu perangkat ke perangkat lain secara manual.
@@ -84,16 +157,6 @@ export const SettingsView: React.FC<{ onRestore: () => void }> = ({ onRestore })
                accept=".json"
                onChange={handleRestore}
             />
-         </div>
-      </div>
-
-      <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-4 flex gap-3">
-         <AlertTriangle className="text-orange-500 flex-shrink-0" />
-         <div>
-            <h4 className="font-bold text-orange-500 text-sm">Peringatan Restore</h4>
-            <p className="text-orange-400/80 text-xs mt-1">
-               Melakukan Restore akan <b>menimpa data di Database Cloud</b> jika terjadi konflik ID. Berhati-hatilah.
-            </p>
          </div>
       </div>
     </div>

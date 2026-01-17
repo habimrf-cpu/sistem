@@ -1,27 +1,45 @@
-import { UserProfile } from '../types';
+import { supabase } from './supabaseClient';
 
-// Daftar email yang diizinkan menjadi ADMIN
-// Ganti atau tambahkan email lain di sini sesuai kebutuhan
-const ADMIN_WHITELIST = [
-  'habimrf@gmail.com',
-  // 'other.admin@gmail.com' 
-];
+const EMAIL_DOMAIN = '@internal.app';
 
 export const authService = {
-  /**
-   * Cek apakah email termasuk dalam whitelist Admin
-   */
-  isAdmin: (email: string | undefined | null): boolean => {
-    if (!email) return false;
-    return ADMIN_WHITELIST.includes(email);
+  // Login dengan Username & Password
+  login: async (username: string, password: string) => {
+    // Kita tempel domain dummy agar valid format email Supabase
+    const email = `${username.toLowerCase().trim()}${EMAIL_DOMAIN}`;
+    
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) throw error;
+    return data;
   },
 
-  /**
-   * Menentukan Role berdasarkan email
-   */
-  getRole: (email: string | undefined): 'admin' | 'user' | 'guest' => {
-    if (!email) return 'guest';
-    if (authService.isAdmin(email)) return 'admin';
-    return 'user';
+  logout: async () => {
+    await supabase.auth.signOut();
+  },
+
+  // Update Username (Email) atau Password
+  updateAccount: async (newUsername?: string, newPassword?: string) => {
+    const updates: any = {};
+    
+    if (newUsername) {
+      updates.email = `${newUsername.toLowerCase().trim()}${EMAIL_DOMAIN}`;
+    }
+    if (newPassword) {
+      updates.password = newPassword;
+    }
+
+    const { data, error } = await supabase.auth.updateUser(updates);
+    if (error) throw error;
+    return data;
+  },
+
+  // Helper untuk membersihkan username dari domain dummy saat ditampilkan
+  formatUsername: (email: string | undefined) => {
+    if (!email) return 'Guest';
+    return email.replace(EMAIL_DOMAIN, '');
   }
 };

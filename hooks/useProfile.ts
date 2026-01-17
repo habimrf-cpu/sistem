@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { UserProfile } from '../types';
+import { authService } from '../services/authService';
 
 export function useProfile() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -11,9 +12,8 @@ export function useProfile() {
     const checkUser = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        
         if (session?.user) {
-           await fetchProfile(session.user);
+           mapUser(session.user);
         } else {
            setUser(null);
         }
@@ -26,10 +26,10 @@ export function useProfile() {
 
     checkUser();
 
-    // 2. Listen perubahan auth (Login/Logout)
+    // 2. Listen perubahan auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
        if (session?.user) {
-          await fetchProfile(session.user);
+          mapUser(session.user);
        } else {
           setUser(null);
        }
@@ -41,30 +41,14 @@ export function useProfile() {
     };
   }, []);
 
-  const fetchProfile = async (authUser: any) => {
-     // Ambil role dari tabel profiles
-     const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-     
-     if (data) {
-        setUser({
-           email: data.email || authUser.email,
-           name: data.full_name || authUser.user_metadata.full_name || 'User',
-           picture: data.avatar_url || authUser.user_metadata.avatar_url,
-           role: data.role as 'admin' | 'user' // cast role
-        });
-     } else {
-        // Fallback jika profil belum terbuat (jarang terjadi karena trigger)
-        setUser({
-           email: authUser.email,
-           name: authUser.user_metadata.full_name,
-           picture: authUser.user_metadata.avatar_url,
-           role: 'user' // Default safe
-        });
-     }
+  const mapUser = (authUser: any) => {
+    // Dalam sistem Single Admin: Jika punya user session, berarti dia Admin.
+    setUser({
+       email: authUser.email,
+       name: authService.formatUsername(authUser.email), // Tampilkan username saja
+       picture: '', // Tidak pakai foto avatar
+       role: 'admin' 
+    });
   };
 
   return { user, loading, isAdmin: user?.role === 'admin' };

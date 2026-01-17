@@ -5,19 +5,21 @@ import {
 
 import { Tire, Transaction, Vehicle, ViewState } from './types';
 import { dataService } from './services/dataService';
-import { supabase } from './services/supabaseClient'; // Use supabase client
-import { useProfile } from './hooks/useProfile'; // Use custom hook
+import { authService } from './services/authService';
+import { useProfile } from './hooks/useProfile';
 
 import { Dashboard } from './components/Dashboard';
 import { TireManager } from './components/TireComponents';
 import { TransactionHistory } from './components/TransactionHistory';
 import { VehicleList } from './components/VehicleList';
 import { SettingsView } from './components/SettingsView';
+import { LoginModal } from './components/LoginModal';
 import { Logo } from './components/Logo';
 
 function App() {
   const [activeView, setActiveView] = useState<ViewState>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   
   // Data State
   const [tires, setTires] = useState<Tire[]>([]);
@@ -26,8 +28,8 @@ function App() {
   
   const [notification, setNotification] = useState<{message: string, type: 'success'|'error'} | null>(null);
   
-  // Auth State from Hook
-  const { user, loading: authLoading } = useProfile();
+  // Auth State
+  const { user, loading: authLoading, isAdmin } = useProfile();
 
   // --- REAL-TIME SYNC SETUP ---
   useEffect(() => {
@@ -54,29 +56,11 @@ function App() {
       setNotification({ message: msg, type });
   };
 
-  // Auth Handlers (Supabase)
-  const handleLogin = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin
-        }
-      });
-      if (error) throw error;
-    } catch (error: any) {
-      console.error('Login Failed', error);
-      showNotification('Gagal login: ' + error.message, 'error');
-    }
-  };
-
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await authService.logout();
     setActiveView('dashboard'); 
     showNotification('Berhasil logout');
   };
-
-  const isAdmin = user?.role === 'admin';
 
   const handleManualRefresh = () => {
     // Data refreshes automatically via subscription
@@ -134,6 +118,8 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-200 font-sans flex overflow-hidden">
       
+      <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} />
+
       {/* Toast Notification */}
       {notification && (
         <div className={`fixed top-6 right-6 z-[100] px-6 py-4 rounded-lg shadow-xl flex items-start gap-3 animate-bounce max-w-sm ${
@@ -198,33 +184,29 @@ function App() {
            ) : user ? (
               <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                  <div className="flex items-center gap-3 mb-3">
-                    {user.picture ? (
-                       <img src={user.picture} alt={user.name} className="w-10 h-10 rounded-full border border-slate-600" />
-                    ) : (
-                       <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-lg">
-                          {user.name.charAt(0)}
-                       </div>
-                    )}
+                    <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-lg">
+                       {user.name.charAt(0).toUpperCase()}
+                    </div>
                     <div className="overflow-hidden">
-                       <p className="text-sm font-bold text-white truncate">{user.name}</p>
-                       <p className="text-xs text-slate-500 capitalize">{user.role}</p>
+                       <p className="text-sm font-bold text-white truncate capitalize">{user.name}</p>
+                       <p className="text-xs text-emerald-400 font-medium">Administrator</p>
                     </div>
                  </div>
                  <button 
                    onClick={handleLogout}
                    className="w-full flex items-center justify-center gap-2 text-xs bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white py-2 rounded-lg transition-colors"
                  >
-                   <LogOut size={14} /> Sign Out
+                   <LogOut size={14} /> Keluar
                  </button>
               </div>
            ) : (
               <div className="text-center">
-                 <p className="text-xs text-slate-500 mb-3">Login untuk akses penuh</p>
+                 <p className="text-xs text-slate-500 mb-3">Mode Tamu (Read Only)</p>
                  <button 
-                   onClick={handleLogin}
-                   className="w-full flex items-center justify-center gap-2 bg-white text-slate-900 font-bold py-2 rounded-lg hover:bg-slate-200 transition-colors"
+                   onClick={() => setIsLoginModalOpen(true)}
+                   className="w-full flex items-center justify-center gap-2 bg-slate-800 text-white border border-slate-700 font-bold py-2 rounded-lg hover:bg-blue-600 hover:border-blue-500 transition-all"
                  >
-                    <LogIn size={16} /> Sign in with Google
+                    <LogIn size={16} /> Login Admin
                  </button>
               </div>
            )}
