@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Vehicle, UserProfile, VEHICLE_TYPES, VEHICLE_GROUPS } from '../types';
 import { formatDateIndo } from '../utils/helpers';
-import { Truck, Plus, Edit, Trash2, X, Search, AlertTriangle, Save } from 'lucide-react';
+import { Truck, Plus, Edit, Trash2, X, Search, Save, Upload, Download, MoreVertical, FileSpreadsheet } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import { ConfirmationModal } from './ConfirmationModal';
+import * as XLSX from 'xlsx';
 
 interface VehicleListProps {
   vehicles: Vehicle[];
@@ -16,6 +17,9 @@ export const VehicleList: React.FC<VehicleListProps> = ({ vehicles, user, onRefr
   const [showModal, setShowModal] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  
+  // File input for import
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isAdmin = user?.role === 'admin';
 
@@ -32,14 +36,98 @@ export const VehicleList: React.FC<VehicleListProps> = ({ vehicles, user, onRefr
     }
   };
 
+  // --- Template Download ---
+  const handleDownloadTemplate = () => {
+    const headers = [
+       ['Plat Nomor', 'Tipe Kendaraan', 'Departemen', 'Nama Supir']
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(headers);
+    // Add example row
+    XLSX.utils.sheet_add_json(ws, [
+       {'Plat Nomor': 'B 1234 ABC', 'Tipe Kendaraan': 'FUSO', 'Departemen': 'RKI', 'Nama Supir': 'Budi Santoso'}
+    ], {skipHeader: true, origin: "A2"});
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template Kendaraan");
+    XLSX.writeFile(wb, "Template_Import_Kendaraan.xlsx");
+  };
+
+  // --- Import Logic ---
+  const handleImportClick = () => {
+    if (fileInputRef.current) {
+        fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+        const bstr = evt.target?.result;
+        if (!bstr) return;
+
+        try {
+            const wb = XLSX.read(bstr, { type: 'binary' });
+            const wsname = wb.SheetNames[0];
+            const ws = wb.Sheets[wsname];
+            const data = XLSX.utils.sheet_to_json(ws);
+            
+            let successCount = 0;
+            let failCount = 0;
+
+            data.forEach((row: any) => {
+                const plate = row['Plat Nomor'] || row['plateNumber'];
+                const driver = row['Nama Supir'] || row['driver'];
+                
+                if (plate) {
+                    const newVehicle: Vehicle = {
+                        id: Date.now() + Math.random(),
+                        plateNumber: String(plate).toUpperCase(),
+                        vehicleType: row['Tipe Kendaraan'] || VEHICLE_TYPES[0],
+                        department: row['Departemen'] || VEHICLE_GROUPS[0],
+                        driver: driver || 'Belum Ada',
+                        status: 'active',
+                        tireHistory: []
+                    };
+                    dataService.saveVehicle(newVehicle);
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            });
+
+            alert(`Import Selesai.\nBerhasil: ${successCount}\nGagal/Tanpa Plat: ${failCount}`);
+            onRefresh();
+
+        } catch (error) {
+            console.error(error);
+            alert("Gagal membaca file Excel. Pastikan format sesuai template.");
+        } finally {
+            if(fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+    reader.readAsBinaryString(file);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
+       {/* Hidden Input for Import */}
+       <input 
+         type="file" 
+         accept=".xlsx, .xls" 
+         ref={fileInputRef} 
+         onChange={handleFileChange} 
+         className="hidden" 
+       />
+
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
          <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <Truck className="text-blue-500" /> Daftar Kendaraan
          </h2>
-         <div className="flex gap-2 w-full md:w-auto">
+         <div className="flex gap-2 w-full md:w-auto items-center">
             <div className="relative flex-1 md:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <input 
@@ -50,13 +138,31 @@ export const VehicleList: React.FC<VehicleListProps> = ({ vehicles, user, onRefr
                   onChange={e => setSearchTerm(e.target.value)}
                 />
             </div>
+            
             {isAdmin && (
-              <button 
-                onClick={() => { setEditingVehicle(null); setShowModal(true); }}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
-              >
-                <Plus size={16} /> Tambah
-              </button>
+               <>
+                  <button 
+                    onClick={() => { setEditingVehicle(null); setShowModal(true); }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 whitespace-nowrap"
+                  >
+                    <Plus size={16} /> <span className="hidden sm:inline">Tambah</span>
+                  </button>
+                  
+                  {/* Actions Dropdown */}
+                  <div className="relative group">
+                     <button className="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-slate-300 border border-slate-600">
+                        <MoreVertical size={20} />
+                     </button>
+                     <div className="hidden group-hover:block absolute right-0 mt-2 w-48 bg-slate-800 border border-slate-600 rounded-lg shadow-xl z-10">
+                        <button onClick={handleImportClick} className="flex items-center gap-2 w-full px-4 py-3 text-sm text-emerald-400 hover:bg-slate-700 text-left border-b border-slate-700">
+                           <Upload size={16}/> Import Excel
+                        </button>
+                        <button onClick={handleDownloadTemplate} className="flex items-center gap-2 w-full px-4 py-3 text-sm text-slate-300 hover:bg-slate-700 text-left">
+                           <Download size={16}/> Template Import
+                        </button>
+                     </div>
+                  </div>
+               </>
             )}
          </div>
       </div>

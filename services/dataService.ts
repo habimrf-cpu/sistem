@@ -11,30 +11,54 @@ const STORAGE_KEYS = {
 const INITIAL_TIRES: Tire[] = [
   {
     id: 1715481200000,
-    serialNumber: 'SN-2024-001',
-    brand: 'Bridgestone',
-    size: '11.00-20',
+    serialNumber: 'SN-2025-001',
+    brand: 'TMD 97',
+    size: '11.00',
     status: 'available',
     condition: 'Baru',
     location: 'Rak A1',
-    dateIn: '2024-05-01',
+    dateIn: '2025-01-01',
     createdBy: 'Admin',
     updatedAt: 1715481200000
   },
   {
     id: 1715481300000,
-    serialNumber: 'SN-2024-002',
-    brand: 'Gajah Tunggal',
-    size: 'TMD 18 - 10.00',
+    serialNumber: 'SN-2025-002',
+    brand: 'TMD 18',
+    size: '10.00',
     status: 'out',
     condition: 'Bekas Baik',
     location: '-',
-    dateIn: '2024-04-15',
-    dateOut: '2024-05-10',
+    dateIn: '2024-12-15',
+    dateOut: '2025-01-05',
     plateNumber: 'B 9999 XYZ',
     odometer: 50000,
     createdBy: 'Admin',
     updatedAt: 1715481300000
+  },
+  {
+    id: 1715481400000,
+    serialNumber: 'SN-2025-003',
+    brand: 'MRF M77',
+    size: '11.00',
+    status: 'available',
+    condition: 'Baru',
+    location: 'Rak A2',
+    dateIn: '2025-01-06',
+    createdBy: 'Admin',
+    updatedAt: 1715481400000
+  },
+   {
+    id: 1715481500000,
+    serialNumber: 'SN-2025-004',
+    brand: 'MASAK',
+    size: '10.00',
+    status: 'available',
+    condition: 'Perlu Repair',
+    location: 'Gudang Lama',
+    dateIn: '2025-01-02',
+    createdBy: 'Admin',
+    updatedAt: 1715481500000
   }
 ];
 
@@ -42,12 +66,12 @@ const INITIAL_VEHICLES: Vehicle[] = [
   {
     id: 1,
     plateNumber: 'B 9999 XYZ',
-    vehicleType: 'Hino 500',
-    department: 'Logistik',
+    vehicleType: 'FUSO',
+    department: 'LOGISTIK',
     driver: 'Budi Santoso',
     status: 'active',
     tireHistory: [
-      { serialNumber: 'SN-2024-002', dateInstalled: '2024-05-10', odometer: 50000 }
+      { serialNumber: 'SN-2025-002', dateInstalled: '2025-01-05', odometer: 50000 }
     ]
   }
 ];
