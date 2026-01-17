@@ -28,8 +28,15 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
       setPassword('');
     } catch (err: any) {
       console.error("Login Error:", err);
-      // Display the actual error message from Supabase
-      setError(err.message || 'Login gagal. Periksa username dan password.');
+      
+      // Translate Supabase error to user friendly message
+      if (err.message === 'Invalid login credentials') {
+         setError('Gagal Login. Kemungkinan penyebab:\n1. Username/Password salah.\n2. User belum dibuat di Supabase.\n3. Email belum dikonfirmasi (Cek folder Spam/Inbox email Anda atau set "Auto Confirm" di Supabase).');
+      } else if (err.message.includes('Email not confirmed')) {
+         setError('Email belum dikonfirmasi. Silakan cek inbox email Anda atau atur "Auto Confirm Emails" di Supabase Authentication Settings.');
+      } else {
+         setError(err.message || 'Login gagal. Periksa koneksi internet.');
+      }
     } finally {
       setLoading(false);
     }
@@ -47,7 +54,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg text-xs flex items-start gap-2">
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg text-xs flex items-start gap-2 whitespace-pre-line">
               <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
               <span>{error}</span>
             </div>
@@ -55,14 +62,16 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
 
           <div className="bg-blue-900/20 border border-blue-500/20 p-3 rounded-lg flex gap-2">
              <Info className="text-blue-400 flex-shrink-0" size={16} />
-             <div className="text-xs text-slate-300">
-                <p className="font-bold mb-1">Info Setup Admin:</p>
-                <p>Sistem ini menggunakan username. Pastikan Anda telah membuat user di Supabase dengan email <b>admin@internal.app</b>.</p>
+             <div className="text-xs text-slate-300 space-y-1">
+                <p className="font-bold">Info Setup:</p>
+                <p>• Default user: <b>admin</b> (jika Anda membuat user <i>admin@internal.app</i>).</p>
+                <p>• Anda juga bisa login menggunakan <b>email lengkap</b> yang terdaftar.</p>
+                <p className="text-amber-400">• Pastikan status user di Supabase adalah "Confirmed".</p>
              </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1">Username</label>
+            <label className="block text-sm font-medium text-slate-400 mb-1">Username / Email</label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
               <input 

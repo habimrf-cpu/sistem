@@ -5,9 +5,18 @@ const EMAIL_DOMAIN = '@internal.app';
 export const authService = {
   // Login dengan Username & Password
   login: async (username: string, password: string) => {
-    // Kita tempel domain dummy agar valid format email Supabase
-    const email = `${username.toLowerCase().trim()}${EMAIL_DOMAIN}`;
+    const input = username.toLowerCase().trim();
+    let email = input;
+
+    // Logika Fleksibel:
+    // 1. Jika input mengandung '@', anggap user memasukkan email lengkap (misal: admin@gmail.com atau admin@internal.app)
+    // 2. Jika tidak, anggap itu username dan tempel domain default
+    if (!input.includes('@')) {
+       email = `${input}${EMAIL_DOMAIN}`;
+    }
     
+    console.log("Attempting login with:", email); 
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password
@@ -26,7 +35,13 @@ export const authService = {
     const updates: any = {};
     
     if (newUsername) {
-      updates.email = `${newUsername.toLowerCase().trim()}${EMAIL_DOMAIN}`;
+      const input = newUsername.toLowerCase().trim();
+      // Gunakan logika yang sama: kalau ada @ pakai langsung, kalau tidak append domain
+      if (input.includes('@')) {
+         updates.email = input;
+      } else {
+         updates.email = `${input}${EMAIL_DOMAIN}`;
+      }
     }
     if (newPassword) {
       updates.password = newPassword;
@@ -40,6 +55,7 @@ export const authService = {
   // Helper untuk membersihkan username dari domain dummy saat ditampilkan
   formatUsername: (email: string | undefined) => {
     if (!email) return 'Guest';
-    return email.replace(EMAIL_DOMAIN, '');
+    // Ambil bagian sebelum @ (berlaku untuk internal.app maupun gmail.com)
+    return email.split('@')[0];
   }
 };
