@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Tire, Vehicle, SIZE_OPTIONS, Transaction, UserProfile } from '../types';
+import { Tire, Vehicle, SIZE_OPTIONS, BRAND_OPTIONS, Transaction, UserProfile } from '../types';
 import { 
   Search, Eye, Edit, Trash2, QrCode, Plus, ArrowUpRight, ArrowDownRight, 
   X, AlertTriangle, FileSpreadsheet, Printer, Archive, Save, Upload, Download
 } from 'lucide-react';
 import { dataService } from '../services/dataService';
+import { formatDateIndo } from '../utils/helpers';
 import { ConfirmationModal } from './ConfirmationModal';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -117,7 +118,7 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
     const ws = XLSX.utils.json_to_sheet(filteredData.map(t => ({
       ...t,
       location: 'Bengkel Krc', 
-      brand: '-'
+      brand: t.brand
     })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Stok Ban");
@@ -133,9 +134,9 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
     
     (doc as any).autoTable({
       startY: 25,
-      head: [['No. Seri', 'Ukuran', 'Status', 'Lokasi', 'Tgl Masuk']],
+      head: [['No. Seri', 'Tipe', 'Ukuran', 'Status', 'Lokasi', 'Tgl Masuk']],
       body: filteredData.map(t => [
-        t.serialNumber, t.size, t.status, 'Bengkel Krc', t.dateIn
+        t.serialNumber, t.brand, t.size, t.status, 'Bengkel Krc', formatDateIndo(t.dateIn)
       ]),
     });
     
@@ -150,7 +151,7 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
     const ws = XLSX.utils.aoa_to_sheet(headers);
     // Add example row
     XLSX.utils.sheet_add_json(ws, [
-       {'Nomor Seri': 'SN-CONTOH-01', 'Ukuran': SIZE_OPTIONS[0], 'Merk': 'Bridgestone', 'Kondisi': 'Baru', 'Tanggal Masuk (YYYY-MM-DD)': '2024-01-01'}
+       {'Nomor Seri': 'SN-CONTOH-01', 'Ukuran': SIZE_OPTIONS[0], 'Merk': BRAND_OPTIONS[0], 'Kondisi': 'Baru', 'Tanggal Masuk (YYYY-MM-DD)': '2024-01-01'}
     ], {skipHeader: true, origin: "A2"});
 
     const wb = XLSX.utils.book_new();
@@ -214,7 +215,7 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
                     const newTire: Tire = {
                         id: Date.now() + Math.random(),
                         serialNumber: String(sn).toUpperCase(),
-                        brand: row['Merk'] || '-',
+                        brand: row['Merk'] || BRAND_OPTIONS[0],
                         size: row['Ukuran'] || SIZE_OPTIONS[0],
                         condition: row['Kondisi'] || 'Baru',
                         status: 'available',
@@ -358,7 +359,7 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
                     />
                 </th>
                 <th className="px-6 py-4">Nomor Seri</th>
-                <th className="px-6 py-4">Ukuran</th>
+                <th className="px-6 py-4">Tipe & Ukuran</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4">Lokasi/Plat</th>
                 <th className="px-6 py-4">Tanggal</th>
@@ -380,7 +381,8 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
                     {tire.serialNumber}
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-sm text-slate-300 print:text-black">{tire.size}</div>
+                    <div className="text-sm text-white font-bold print:text-black">{tire.brand}</div>
+                    <div className="text-xs text-slate-400 print:text-black">{tire.size}</div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col gap-1">
@@ -399,8 +401,8 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
                      )}
                   </td>
                   <td className="px-6 py-4 text-xs">
-                    <div>Masuk: {tire.dateIn}</div>
-                    {tire.dateOut && <div className="text-orange-400 print:text-black">Keluar: {tire.dateOut}</div>}
+                    <div>Masuk: {formatDateIndo(tire.dateIn)}</div>
+                    {tire.dateOut && <div className="text-orange-400 print:text-black">Keluar: {formatDateIndo(tire.dateOut)}</div>}
                   </td>
                   <td className="px-6 py-4 no-print">
                     <div className="flex justify-center gap-2">
@@ -410,7 +412,7 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
                       {/* Protected Actions */}
                       {isAdmin && (
                          <>
-                            <button onClick={() => {setSelectedTire(tire); setShowModal('edit');}} className="p-1.5 hover:bg-slate-700 rounded text-amber-400" title="Edit Serial Number"><Edit size={16}/></button>
+                            <button onClick={() => {setSelectedTire(tire); setShowModal('edit');}} className="p-1.5 hover:bg-slate-700 rounded text-amber-400" title="Edit Data"><Edit size={16}/></button>
                             <button onClick={(e) => {e.stopPropagation(); handleDeleteClick(tire.id);}} className="p-1.5 hover:bg-slate-700 rounded text-red-400" title="Hapus"><Trash2 size={16}/></button>
                          </>
                       )}
@@ -529,10 +531,10 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
 const TireFormModal: React.FC<{ type: 'in', onClose: () => void, onSave: (t: Tire) => void }> = ({ onClose, onSave }) => {
   const [form, setForm] = useState<Partial<Tire>>({
     serialNumber: '',
-    brand: '-', // Default hardcoded
+    brand: BRAND_OPTIONS[0],
     size: SIZE_OPTIONS[0],
     condition: 'Baru',
-    location: 'Bengkel Krc', // Default hardcoded
+    location: 'Bengkel Krc',
     dateIn: new Date().toISOString().split('T')[0]
   });
   const [error, setError] = useState('');
@@ -582,7 +584,15 @@ const TireFormModal: React.FC<{ type: 'in', onClose: () => void, onSave: (t: Tir
           </div>
 
           <div>
-             <label className="block text-sm font-medium text-slate-400 mb-1">Ukuran / Tipe</label>
+             <label className="block text-sm font-medium text-slate-400 mb-1">Tipe Ban (Pattern)</label>
+             <select className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white"
+                value={form.brand} onChange={e => setForm({...form, brand: e.target.value})}>
+                {BRAND_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+             </select>
+          </div>
+
+          <div>
+             <label className="block text-sm font-medium text-slate-400 mb-1">Ukuran</label>
              <select className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white"
                 value={form.size} onChange={e => setForm({...form, size: e.target.value})}>
                 {SIZE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
@@ -616,24 +626,29 @@ const TireFormModal: React.FC<{ type: 'in', onClose: () => void, onSave: (t: Tir
 };
 
 const TireEditModal: React.FC<{ tire: Tire, onClose: () => void, onSave: (t: Tire) => void }> = ({ tire, onClose, onSave }) => {
-  const [newSerial, setNewSerial] = useState(tire.serialNumber);
+  const [formData, setFormData] = useState({
+    serialNumber: tire.serialNumber,
+    brand: tire.brand || BRAND_OPTIONS[0],
+    size: tire.size || SIZE_OPTIONS[0]
+  });
   const [error, setError] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSerial) {
+    if (!formData.serialNumber) {
       setError("Nomor Seri tidak boleh kosong");
       return;
     }
-    // Check if changed and if unique
-    if (newSerial !== tire.serialNumber && !dataService.isSerialUnique(newSerial)) {
+    if (formData.serialNumber !== tire.serialNumber && !dataService.isSerialUnique(formData.serialNumber)) {
       setError("Nomor Seri sudah digunakan oleh ban lain!");
       return;
     }
 
     onSave({
         ...tire,
-        serialNumber: newSerial.toUpperCase(),
+        serialNumber: formData.serialNumber.toUpperCase(),
+        brand: formData.brand,
+        size: formData.size,
         updatedAt: Date.now()
     });
   };
@@ -643,7 +658,7 @@ const TireEditModal: React.FC<{ tire: Tire, onClose: () => void, onSave: (t: Tir
       <div className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-sm border border-slate-700">
         <div className="flex justify-between items-center p-6 border-b border-slate-700">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
-            <Edit className="text-blue-500" /> Edit Serial Number
+            <Edit className="text-blue-500" /> Edit Data Ban
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24}/></button>
         </div>
@@ -651,13 +666,29 @@ const TireEditModal: React.FC<{ tire: Tire, onClose: () => void, onSave: (t: Tir
           {error && <div className="bg-red-500/10 text-red-500 p-2 rounded text-sm">{error}</div>}
           
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1">Nomor Seri Baru</label>
+            <label className="block text-sm font-medium text-slate-400 mb-1">Nomor Seri</label>
             <input 
               type="text" 
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white font-mono focus:ring-2 focus:ring-blue-500"
-              value={newSerial}
-              onChange={e => {setNewSerial(e.target.value.toUpperCase()); setError('');}}
+              value={formData.serialNumber}
+              onChange={e => {setFormData({...formData, serialNumber: e.target.value.toUpperCase()}); setError('');}}
             />
+          </div>
+
+          <div>
+             <label className="block text-sm font-medium text-slate-400 mb-1">Tipe Ban (Pattern)</label>
+             <select className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white"
+                value={formData.brand} onChange={e => setFormData({...formData, brand: e.target.value})}>
+                {BRAND_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+             </select>
+          </div>
+
+          <div>
+             <label className="block text-sm font-medium text-slate-400 mb-1">Ukuran</label>
+             <select className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white"
+                value={formData.size} onChange={e => setFormData({...formData, size: e.target.value})}>
+                {SIZE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+             </select>
           </div>
 
           <div className="pt-2 flex justify-end gap-3">
@@ -737,7 +768,7 @@ const TireOutModal: React.FC<{ tires: Tire[], vehicles: Vehicle[], onClose: () =
             >
               <option value="">-- Pilih Nomor Seri --</option>
               {availableTires.map(t => (
-                <option key={t.id} value={t.serialNumber}>{t.serialNumber} ({t.size})</option>
+                <option key={t.id} value={t.serialNumber}>{t.serialNumber} ({t.brand} {t.size})</option>
               ))}
             </select>
           </div>
@@ -800,6 +831,10 @@ const TireDetailModal: React.FC<{ tire: Tire, onClose: () => void }> = ({ tire, 
                       {tire.status === 'available' ? 'TERSEDIA' : 'KELUAR'}
                    </p>
                 </div>
+                 <div>
+                   <span className="text-xs text-slate-500 uppercase tracking-wider">Tipe</span>
+                   <p className="text-white">{tire.brand}</p>
+                </div>
                 <div>
                    <span className="text-xs text-slate-500 uppercase tracking-wider">Ukuran</span>
                    <p className="text-white">{tire.size}</p>
@@ -810,11 +845,11 @@ const TireDetailModal: React.FC<{ tire: Tire, onClose: () => void }> = ({ tire, 
                 </div>
                  <div>
                    <span className="text-xs text-slate-500 uppercase tracking-wider">Tanggal Masuk</span>
-                   <p className="text-white">{tire.dateIn}</p>
+                   <p className="text-white">{formatDateIndo(tire.dateIn)}</p>
                 </div>
                  <div>
                    <span className="text-xs text-slate-500 uppercase tracking-wider">Tanggal Keluar</span>
-                   <p className="text-white">{tire.dateOut || '-'}</p>
+                   <p className="text-white">{formatDateIndo(tire.dateOut)}</p>
                 </div>
                  <div>
                    <span className="text-xs text-slate-500 uppercase tracking-wider">Plat Nomor</span>
@@ -856,7 +891,7 @@ const QRModal: React.FC<{ tire: Tire, onClose: () => void }> = ({ tire, onClose 
           </div>
           <div className="text-center">
              <p className="text-white font-mono text-xl">{tire.serialNumber}</p>
-             <p className="text-slate-400">{tire.size}</p>
+             <p className="text-slate-400">{tire.brand} - {tire.size}</p>
           </div>
           <div className="flex gap-4 mt-2">
              <button onClick={onClose} className="text-slate-400 hover:text-white px-4 py-2">Tutup</button>

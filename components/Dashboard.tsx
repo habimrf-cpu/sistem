@@ -18,17 +18,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => 
     return { available: available.length, out: out.length, critical };
   }, [tires]);
 
-  // Calculate generic stock breakdown (Size only for the main list)
+  // Helper to construct group key (Brand + Size)
+  const getGroupKey = (t: Tire) => {
+    if (!t.brand || t.brand === '-' || t.brand === 'Belum Ada') return t.size;
+    return `${t.brand} ${t.size}`;
+  };
+
+  // Calculate generic stock breakdown
   const sizeBreakdown = useMemo(() => {
     const available = tires.filter(t => t.status === 'available');
-    const bySize: Record<string, number> = {};
+    const byGroup: Record<string, number> = {};
 
     available.forEach(t => {
-       const size = t.size || 'Tanpa Ukuran';
-       bySize[size] = (bySize[size] || 0) + 1;
+       const key = getGroupKey(t);
+       byGroup[key] = (byGroup[key] || 0) + 1;
     });
 
-    return bySize;
+    return byGroup;
   }, [tires]);
 
   // Get Specific Tires List for Selected Size
@@ -36,7 +42,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => 
     if (!selectedSize) return [];
 
     return tires
-      .filter(t => t.status === 'available' && t.size === selectedSize)
+      .filter(t => t.status === 'available' && getGroupKey(t) === selectedSize)
       // Sort by dateIn descending (newest first)
       .sort((a, b) => new Date(b.dateIn).getTime() - new Date(a.dateIn).getTime());
   }, [tires, selectedSize]);
@@ -78,20 +84,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => 
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 shadow-lg flex flex-col h-[400px]">
            <div className="flex items-center gap-2 mb-4 border-b border-slate-700 pb-3 flex-shrink-0">
               <Layers size={18} className="text-purple-400"/>
-              <h4 className="font-bold text-white">Stok per Ukuran</h4>
+              <h4 className="font-bold text-white">Stok per Tipe & Ukuran</h4>
            </div>
            
            <div className="space-y-2 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-              <p className="text-xs text-slate-500 mb-2">Klik pada ukuran untuk melihat daftar serial number.</p>
+              <p className="text-xs text-slate-500 mb-2">Klik pada tipe untuk melihat daftar serial number.</p>
               {Object.keys(sizeBreakdown).length > 0 ? (
                   (Object.entries(sizeBreakdown) as [string, number][])
                     .sort(([,a], [,b]) => b - a)
-                    .map(([size, count]) => {
-                    const isSelected = selectedSize === size;
+                    .map(([key, count]) => {
+                    const isSelected = selectedSize === key;
                     return (
                       <button 
-                        key={size} 
-                        onClick={() => setSelectedSize(isSelected ? null : size)}
+                        key={key} 
+                        onClick={() => setSelectedSize(isSelected ? null : key)}
                         className={`w-full flex justify-between items-center text-sm p-3 rounded-lg transition-all border ${
                           isSelected 
                             ? 'bg-purple-500/20 border-purple-500/50' 
@@ -100,7 +106,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => 
                       >
                           <div className="flex items-center gap-3">
                              <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-purple-400' : 'bg-slate-600'}`}></div>
-                             <span className={`font-medium ${isSelected ? 'text-white' : 'text-slate-300'}`}>{size}</span>
+                             <span className={`font-medium ${isSelected ? 'text-white' : 'text-slate-300'}`}>{key}</span>
                           </div>
                           
                           <div className="flex items-center gap-3">
@@ -146,7 +152,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => 
                             </div>
                             <div className="flex justify-between items-end text-xs text-slate-400">
                                 <div className="flex flex-col">
-                                    <span className="flex items-center gap-1"><Tag size={10} /> {tire.brand}</span>
+                                    <span className="flex items-center gap-1"><Tag size={10} /> {tire.brand !== '-' ? tire.brand : 'N/A'}</span>
                                 </div>
                                 <div className="flex items-center gap-1 opacity-70">
                                     <Calendar size={10} /> {tire.dateIn}
@@ -161,7 +167,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => 
              ) : (
                 <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
                    <Info size={48} className="text-slate-700 mb-3" />
-                   <p className="text-sm">Pilih ukuran ban di sebelah kiri untuk melihat daftar Nomor Seri yang tersedia.</p>
+                   <p className="text-sm">Pilih tipe/ukuran ban di sebelah kiri untuk melihat daftar Nomor Seri yang tersedia.</p>
                 </div>
              )}
            </div>
@@ -184,7 +190,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => 
                   </div>
                   <div>
                     <p className="text-white font-mono font-bold">{tx.serialNumber}</p>
-                    <p className="text-xs text-slate-400">{tx.size}</p>
+                    <p className="text-xs text-slate-400">{tx.brand} {tx.size}</p>
                   </div>
                 </div>
                 <div className="text-right">

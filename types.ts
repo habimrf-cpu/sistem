@@ -62,12 +62,10 @@ export interface UserProfile {
 
 export type ViewState = 'dashboard' | 'stock' | 'transactions' | 'vehicles' | 'settings';
 
-export const BRAND_OPTIONS = []; // Deprecated as per request
+export const BRAND_OPTIONS = ['TMD 97', 'TMD 18', 'MRF M77', 'MASAK'];
 export const SIZE_OPTIONS = [
-  'BAN TMD 97 11.00',
-  'BAN TMD 18 10.00',
-  'BAN MRF M77 11.00',
-  'BAN MASAK'
+  '11.00',
+  '10.00'
 ];
 export const CONDITION_OPTIONS = ['Baru', 'Bekas Baik', 'Bekas Cukup', 'Perlu Repair'];
 export const VEHICLE_GROUPS = ['RKI', 'TEAM', 'TKN', 'GAB', 'RSI', 'TONI'];
