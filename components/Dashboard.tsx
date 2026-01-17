@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Tire, Transaction } from '../types';
-import { Package, TrendingDown, Clock, ArrowUpRight, ArrowDownRight, Layers, Tag, ChevronRight, Info, Calendar, Hash } from 'lucide-react';
+import { Package, TrendingDown, Clock, ArrowUpRight, ArrowDownRight, Layers, Tag, ChevronRight, Info, Calendar, Hash, Cloud } from 'lucide-react';
 
 interface DashboardProps {
   tires: Tire[];
@@ -24,36 +24,44 @@ export const Dashboard: React.FC<DashboardProps> = ({ tires, transactions }) => 
     return `${t.brand} ${t.size}`;
   };
 
-  // Calculate generic stock breakdown
   const sizeBreakdown = useMemo(() => {
     const available = tires.filter(t => t.status === 'available');
     const byGroup: Record<string, number> = {};
-
     available.forEach(t => {
        const key = getGroupKey(t);
        byGroup[key] = (byGroup[key] || 0) + 1;
     });
-
     return byGroup;
   }, [tires]);
 
-  // Get Specific Tires List for Selected Size
   const tiresForSize = useMemo(() => {
     if (!selectedSize) return [];
-
     return tires
       .filter(t => t.status === 'available' && getGroupKey(t) === selectedSize)
-      // Sort by dateIn descending (newest first)
       .sort((a, b) => new Date(b.dateIn).getTime() - new Date(a.dateIn).getTime());
   }, [tires, selectedSize]);
 
-  // Get recent 10 transactions
   const recentTransactions = useMemo(() => {
     return transactions.slice(0, 10);
   }, [transactions]);
 
   return (
     <div className="space-y-6 animate-fade-in max-w-5xl mx-auto">
+      
+      {/* Supabase Status Banner */}
+      <div className="bg-emerald-900/20 border border-emerald-500/30 p-3 rounded-lg flex items-start gap-3 text-sm text-emerald-200">
+        <div className="relative mt-0.5">
+            <Cloud className="text-emerald-400" size={18} />
+            <div className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full animate-ping"></div>
+        </div>
+        <div>
+            <span className="font-bold text-emerald-400">Database Terhubung (Supabase)</span>
+            <p className="text-xs text-slate-400 mt-1">
+              Data disinkronisasi secara real-time dan diamankan dengan RLS.
+            </p>
+        </div>
+      </div>
+
       {/* Lightweight Stats Cards */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-slate-800 border border-slate-700 p-6 rounded-xl shadow-lg flex flex-col items-center justify-center text-center">

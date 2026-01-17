@@ -1,155 +1,121 @@
 import { Tire, Transaction, Vehicle, AppSettings } from '../types';
+import { supabase } from './supabaseClient';
 
 const STORAGE_KEYS = {
-  TIRES: 'wms-tires',
-  TRANSACTIONS: 'wms-transactions',
-  VEHICLES: 'wms-vehicles',
   SETTINGS: 'wms-settings'
 };
 
-// Initial Mock Data to populate the app if empty
-const INITIAL_TIRES: Tire[] = [
-  {
-    id: 1715481200000,
-    serialNumber: 'SN-2025-001',
-    brand: 'TMD 97',
-    size: '11.00',
-    status: 'available',
-    condition: 'Baru',
-    location: 'Rak A1',
-    dateIn: '2025-01-01',
-    createdBy: 'Admin',
-    updatedAt: 1715481200000
-  },
-  {
-    id: 1715481300000,
-    serialNumber: 'SN-2025-002',
-    brand: 'TMD 18',
-    size: '10.00',
-    status: 'out',
-    condition: 'Bekas Baik',
-    location: '-',
-    dateIn: '2024-12-15',
-    dateOut: '2025-01-05',
-    plateNumber: 'B 9999 XYZ',
-    odometer: 50000,
-    createdBy: 'Admin',
-    updatedAt: 1715481300000
-  },
-  {
-    id: 1715481400000,
-    serialNumber: 'SN-2025-003',
-    brand: 'MRF M77',
-    size: '11.00',
-    status: 'available',
-    condition: 'Baru',
-    location: 'Rak A2',
-    dateIn: '2025-01-06',
-    createdBy: 'Admin',
-    updatedAt: 1715481400000
-  },
-   {
-    id: 1715481500000,
-    serialNumber: 'SN-2025-004',
-    brand: 'MASAK',
-    size: '10.00',
-    status: 'available',
-    condition: 'Perlu Repair',
-    location: 'Gudang Lama',
-    dateIn: '2025-01-02',
-    createdBy: 'Admin',
-    updatedAt: 1715481500000
-  }
-];
-
-const INITIAL_VEHICLES: Vehicle[] = [
-  {
-    id: 1,
-    plateNumber: 'B 9999 XYZ',
-    vehicleType: 'FUSO',
-    department: 'LOGISTIK',
-    driver: 'Budi Santoso',
-    status: 'active',
-    tireHistory: [
-      { serialNumber: 'SN-2025-002', dateInstalled: '2025-01-05', odometer: 50000 }
-    ]
-  }
-];
-
 export const dataService = {
-  // --- Tires ---
-  getTires: (): Tire[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.TIRES);
-    return data ? JSON.parse(data) : INITIAL_TIRES;
+  // --- REAL-TIME LISTENERS (SUPABASE) ---
+  
+  subscribeTires: (callback: (tires: Tire[]) => void) => {
+    // 1. Fetch Initial Data
+    supabase.from('tires').select('*').then(({ data, error }) => {
+       if (!error && data) callback(data as Tire[]);
+    });
+
+    // 2. Subscribe to Changes
+    const channel = supabase.channel('public:tires')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tires' }, () => {
+         // Naive refresh: Fetch all on any change to ensure consistency
+         supabase.from('tires').select('*').then(({ data }) => {
+            if (data) callback(data as Tire[]);
+         });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   },
 
-  saveTire: (tire: Tire): void => {
-    const tires = dataService.getTires();
-    const existingIndex = tires.findIndex(t => t.id === tire.id);
-    
-    if (existingIndex >= 0) {
-      tires[existingIndex] = tire;
-    } else {
-      tires.push(tire);
+  subscribeTransactions: (callback: (txs: Transaction[]) => void) => {
+    supabase.from('transactions').select('*').order('timestamp', { ascending: false }).then(({ data, error }) => {
+       if (!error && data) callback(data as Transaction[]);
+    });
+
+    const channel = supabase.channel('public:transactions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+         supabase.from('transactions').select('*').order('timestamp', { ascending: false }).then(({ data }) => {
+            if (data) callback(data as Transaction[]);
+         });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  },
+
+  subscribeVehicles: (callback: (vehicles: Vehicle[]) => void) => {
+    supabase.from('vehicles').select('*').then(({ data, error }) => {
+       if (!error && data) callback(data as Vehicle[]);
+    });
+
+    const channel = supabase.channel('public:vehicles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, () => {
+         supabase.from('vehicles').select('*').then(({ data }) => {
+            if (data) callback(data as Vehicle[]);
+         });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  },
+
+  // --- ACTIONS (RLS Protected) ---
+
+  saveTire: async (tire: Tire) => {
+    const { error } = await supabase.from('tires').upsert(tire);
+    if (error) {
+       console.error("Save Tire Failed:", error.message);
+       throw error;
     }
-    localStorage.setItem(STORAGE_KEYS.TIRES, JSON.stringify(tires));
   },
 
-  deleteTire: (id: number): void => {
-    const tires = dataService.getTires().filter(t => t.id !== id);
-    localStorage.setItem(STORAGE_KEYS.TIRES, JSON.stringify(tires));
+  deleteTire: async (id: number) => {
+    const { error } = await supabase.from('tires').delete().eq('id', id);
+    if (error) throw error;
   },
 
-  deleteTires: (ids: number[]): void => {
-    const tires = dataService.getTires().filter(t => !ids.includes(t.id));
-    localStorage.setItem(STORAGE_KEYS.TIRES, JSON.stringify(tires));
+  deleteTires: async (ids: number[]) => {
+    const { error } = await supabase.from('tires').delete().in('id', ids);
+    if (error) throw error;
   },
 
-  isSerialUnique: (serial: string, excludeId?: number): boolean => {
-    const tires = dataService.getTires();
-    return !tires.some(t => t.serialNumber === serial && t.id !== excludeId);
+  isSerialUnique: async (serial: string, excludeId?: number): Promise<boolean> => {
+     // Check directly against DB
+     let query = supabase.from('tires').select('id', { count: 'exact', head: true }).eq('serialNumber', serial);
+     
+     if (excludeId) {
+        query = query.neq('id', excludeId);
+     }
+     
+     const { count, error } = await query;
+     if (error) {
+        console.error(error);
+        return false; // Fail safe
+     }
+     return count === 0;
   },
 
-  // --- Transactions ---
-  getTransactions: (): Transaction[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-    return data ? JSON.parse(data) : [];
+  addTransaction: async (transaction: Transaction) => {
+    const { error } = await supabase.from('transactions').insert(transaction);
+    if (error) throw error;
   },
 
-  addTransaction: (transaction: Transaction): void => {
-    const transactions = dataService.getTransactions();
-    transactions.unshift(transaction); // Add to beginning
-    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+  deleteTransaction: async (id: number) => {
+    const { error } = await supabase.from('transactions').delete().eq('id', id);
+    if (error) throw error;
   },
 
-  deleteTransaction: (id: number): void => {
-    const transactions = dataService.getTransactions().filter(t => t.id !== id);
-    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+  saveVehicle: async (vehicle: Vehicle) => {
+    const { error } = await supabase.from('vehicles').upsert(vehicle);
+    if (error) throw error;
   },
 
-  // --- Vehicles ---
-  getVehicles: (): Vehicle[] => {
-    const data = localStorage.getItem(STORAGE_KEYS.VEHICLES);
-    return data ? JSON.parse(data) : INITIAL_VEHICLES;
+  deleteVehicle: async (id: number) => {
+    const { error } = await supabase.from('vehicles').delete().eq('id', id);
+    if (error) throw error;
   },
 
-  saveVehicle: (vehicle: Vehicle): void => {
-    const vehicles = dataService.getVehicles();
-    const existingIndex = vehicles.findIndex(v => v.id === vehicle.id);
-    if (existingIndex >= 0) {
-      vehicles[existingIndex] = vehicle;
-    } else {
-      vehicles.push(vehicle);
-    }
-    localStorage.setItem(STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles));
-  },
-
-  deleteVehicle: (id: number): void => {
-     const vehicles = dataService.getVehicles().filter(v => v.id !== id);
-     localStorage.setItem(STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles));
-  },
-
-  // --- Settings ---
+  // --- SETTINGS (Local Storage for Theme) ---
   getSettings: (): AppSettings => {
     const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     return data ? JSON.parse(data) : {
@@ -163,25 +129,34 @@ export const dataService = {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
   },
 
-  // --- Backup/Restore ---
-  createBackup: (): string => {
-    const backup = {
-      tires: dataService.getTires(),
-      transactions: dataService.getTransactions(),
-      vehicles: dataService.getVehicles(),
-      settings: dataService.getSettings(),
-      timestamp: new Date().toISOString()
-    };
-    return JSON.stringify(backup, null, 2);
+  // --- BACKUP / RESTORE ---
+  createBackup: async (): Promise<string> => {
+    // Fetch all fresh data from Supabase
+    const { data: tires } = await supabase.from('tires').select('*');
+    const { data: transactions } = await supabase.from('transactions').select('*');
+    const { data: vehicles } = await supabase.from('vehicles').select('*');
+
+    return JSON.stringify({ tires, transactions, vehicles, timestamp: new Date().toISOString() }, null, 2);
   },
 
-  restoreBackup: (jsonData: string): boolean => {
+  restoreBackup: async (jsonData: string): Promise<boolean> => {
     try {
       const data = JSON.parse(jsonData);
-      if (data.tires) localStorage.setItem(STORAGE_KEYS.TIRES, JSON.stringify(data.tires));
-      if (data.transactions) localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(data.transactions));
-      if (data.vehicles) localStorage.setItem(STORAGE_KEYS.VEHICLES, JSON.stringify(data.vehicles));
-      if (data.settings) localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(data.settings));
+      
+      // Batch Insert/Upsert
+      if (data.tires?.length) {
+          const { error } = await supabase.from('tires').upsert(data.tires);
+          if (error) throw error;
+      }
+      if (data.transactions?.length) {
+          const { error } = await supabase.from('transactions').upsert(data.transactions);
+          if (error) throw error;
+      }
+      if (data.vehicles?.length) {
+          const { error } = await supabase.from('vehicles').upsert(data.vehicles);
+          if (error) throw error;
+      }
+
       return true;
     } catch (e) {
       console.error("Restore failed", e);
