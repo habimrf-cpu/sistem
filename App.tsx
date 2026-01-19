@@ -105,12 +105,29 @@ function App() {
                         } else if (typeof rawDate === 'number') {
                           // Excel Serial Date
                           const date = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
-                          dateIn = date.toISOString().split('T')[0];
+                          const year = date.getFullYear();
+                          const month = String(date.getMonth() + 1).padStart(2, '0');
+                          const day = String(date.getDate()).padStart(2, '0');
+                          dateIn = `${year}-${month}-${day}`;
                         } else {
-                          // Try parsing string YYYY-MM-DD
-                          const d = new Date(rawDate);
-                          if (!isNaN(d.getTime())) {
-                             dateIn = d.toISOString().split('T')[0];
+                          // String parsing
+                          const strDate = String(rawDate).trim();
+                          
+                          // Try parsing DD-MM-YYYY or DD/MM/YYYY
+                          const parts = strDate.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+                          
+                          if (parts) {
+                             // parts[1]=DD, parts[2]=MM, parts[3]=YYYY -> Convert to YYYY-MM-DD
+                             dateIn = `${parts[3]}-${parts[2].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+                          } else {
+                             // Fallback to standard ISO or US format
+                             const d = new Date(strDate);
+                             if (!isNaN(d.getTime())) {
+                                const year = d.getFullYear();
+                                const month = String(d.getMonth() + 1).padStart(2, '0');
+                                const day = String(d.getDate()).padStart(2, '0');
+                                dateIn = `${year}-${month}-${day}`;
+                             }
                           }
                         }
                       }
@@ -199,10 +216,10 @@ function App() {
 
      const ws = XLSX.utils.aoa_to_sheet(headers);
      
-     // Add example row for clarity
+     // Add example row for clarity with requested Date Format
      if (activeTab === 'stock') {
         XLSX.utils.sheet_add_json(ws, [
-           {'Nomor Seri': 'SN12345', 'Merk': 'TMD 97', 'Ukuran': '11.00', 'Kondisi': 'Baru', 'Tanggal': '2024-01-30'}
+           {'Nomor Seri': 'SN12345', 'Merk': 'TMD 97', 'Ukuran': '11.00', 'Kondisi': 'Baru', 'Tanggal': '08-01-2026'}
         ], {skipHeader: true, origin: "A2"});
      }
 
