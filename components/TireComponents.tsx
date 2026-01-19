@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef } from 'react';
 import { Tire, Vehicle, SIZE_OPTIONS, BRAND_OPTIONS, Transaction, UserProfile } from '../types';
 import { 
@@ -75,11 +76,7 @@ export const TireManager: React.FC<TireListProps> = ({ tires, vehicles, user, on
     try {
         if (confirmDeleteId === -1) {
             // Bulk delete
-            if (dataService.deleteTires) {
-                await dataService.deleteTires(selectedIds);
-            } else {
-                for(const id of selectedIds) await dataService.deleteTire(id);
-            }
+            await dataService.deleteTires(selectedIds);
             setSelectedIds([]);
         } else if (confirmDeleteId !== null) {
           await dataService.deleteTire(confirmDeleteId);

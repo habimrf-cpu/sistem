@@ -1,3 +1,4 @@
+
 import { Tire, Transaction, Vehicle, AppSettings } from '../types';
 import { supabase } from './supabaseClient';
 
@@ -8,11 +9,8 @@ const STORAGE_KEYS = {
 export const dataService = {
   // --- SYSTEM CHECK ---
   checkDatabaseConnection: async (): Promise<{connected: boolean, error?: string}> => {
-    // Coba query sederhana ke tabel utama
     const { error } = await supabase.from('tires').select('id').limit(1);
     
-    // Postgres Error 42P01 = undefined_table (Tabel tidak ditemukan)
-    // Supabase Error PGRST205 = relation not found in schema cache
     if (error && (
         error.code === '42P01' || 
         error.code === 'PGRST205' || 
@@ -23,34 +21,38 @@ export const dataService = {
       return { connected: false, error: 'missing_tables' };
     }
     
-    // Error koneksi lain
-    if (error && error.message) {
+    if (error && error.message && !error.message.includes("JSON object requested")) {
        console.error("DB Check Error:", JSON.stringify(error, null, 2));
-       // Abaikan error "JWT expired" atau permission saat check awal, anggap connected dulu
-       // agar UI tidak panik, biarkan RLS yang handle nanti.
-       if (!error.message.includes("JSON object requested")) {
-           return { connected: true }; 
-       }
     }
 
     return { connected: true };
   },
 
-  // --- REAL-TIME LISTENERS (SUPABASE) ---
-  
-  subscribeTires: (callback: (tires: Tire[]) => void) => {
-    // 1. Fetch Initial Data
-    supabase.from('tires').select('*').then(({ data, error }) => {
-       if (!error && data) callback(data as Tire[]);
-    });
+  // --- MANUAL FETCH (FOR INSTANT SYNC) ---
+  fetchTires: async (): Promise<Tire[]> => {
+    const { data } = await supabase.from('tires').select('*');
+    return (data as Tire[]) || [];
+  },
 
-    // 2. Subscribe to Changes
+  fetchTransactions: async (): Promise<Transaction[]> => {
+    const { data } = await supabase.from('transactions').select('*').order('timestamp', { ascending: false });
+    return (data as Transaction[]) || [];
+  },
+
+  fetchVehicles: async (): Promise<Vehicle[]> => {
+    const { data } = await supabase.from('vehicles').select('*');
+    return (data as Vehicle[]) || [];
+  },
+
+  // --- REAL-TIME LISTENERS (SUPABASE) ---
+  subscribeTires: (callback: (tires: Tire[]) => void) => {
+    // Initial fetch
+    dataService.fetchTires().then(callback);
+
+    // Subscribe
     const channel = supabase.channel('public:tires')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tires' }, () => {
-         // Naive refresh: Fetch all on any change to ensure consistency
-         supabase.from('tires').select('*').then(({ data }) => {
-            if (data) callback(data as Tire[]);
-         });
+         dataService.fetchTires().then(callback);
       })
       .subscribe();
 
@@ -58,15 +60,11 @@ export const dataService = {
   },
 
   subscribeTransactions: (callback: (txs: Transaction[]) => void) => {
-    supabase.from('transactions').select('*').order('timestamp', { ascending: false }).then(({ data, error }) => {
-       if (!error && data) callback(data as Transaction[]);
-    });
+    dataService.fetchTransactions().then(callback);
 
     const channel = supabase.channel('public:transactions')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
-         supabase.from('transactions').select('*').order('timestamp', { ascending: false }).then(({ data }) => {
-            if (data) callback(data as Transaction[]);
-         });
+         dataService.fetchTransactions().then(callback);
       })
       .subscribe();
 
@@ -74,15 +72,11 @@ export const dataService = {
   },
 
   subscribeVehicles: (callback: (vehicles: Vehicle[]) => void) => {
-    supabase.from('vehicles').select('*').then(({ data, error }) => {
-       if (!error && data) callback(data as Vehicle[]);
-    });
+    dataService.fetchVehicles().then(callback);
 
     const channel = supabase.channel('public:vehicles')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, () => {
-         supabase.from('vehicles').select('*').then(({ data }) => {
-            if (data) callback(data as Vehicle[]);
-         });
+         dataService.fetchVehicles().then(callback);
       })
       .subscribe();
 
@@ -90,7 +84,6 @@ export const dataService = {
   },
 
   // --- ACTIONS (RLS Protected) ---
-
   saveTire: async (tire: Tire) => {
     const { error } = await supabase.from('tires').upsert(tire);
     if (error) throw error;
@@ -102,35 +95,18 @@ export const dataService = {
   },
 
   deleteTires: async (ids: number[]) => {
+    if (ids.length === 0) return;
     const { error } = await supabase.from('tires').delete().in('id', ids);
-    if (error) throw error;
-  },
-
-  isSerialUnique: async (serial: string, excludeId?: number): Promise<boolean> => {
-     // Check directly against DB
-     let query = supabase.from('tires').select('id', { count: 'exact', head: true }).eq('serialNumber', serial);
-     
-     if (excludeId) {
-        query = query.neq('id', excludeId);
-     }
-     
-     const { count, error } = await query;
-     if (error) {
-        // Jika error tabel belum ada, anggap unique true dulu biar gak blocking UI logic (error akan ditangkap saat save)
-        if (error.code === '42P01' || error.code === 'PGRST205') return true; 
-        console.error(error);
-        return false; 
-     }
-     return count === 0;
-  },
-
-  addTransaction: async (transaction: Transaction) => {
-    const { error } = await supabase.from('transactions').insert(transaction);
     if (error) throw error;
   },
 
   deleteTransaction: async (id: number) => {
     const { error } = await supabase.from('transactions').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  addTransaction: async (transaction: Transaction) => {
+    const { error } = await supabase.from('transactions').insert(transaction);
     if (error) throw error;
   },
 
@@ -144,7 +120,15 @@ export const dataService = {
     if (error) throw error;
   },
 
-  // --- SETTINGS (Local Storage for Theme) ---
+  isSerialUnique: async (serial: string, excludeId?: number): Promise<boolean> => {
+     let query = supabase.from('tires').select('id', { count: 'exact', head: true }).eq('serialNumber', serial);
+     if (excludeId) query = query.neq('id', excludeId);
+     const { count, error } = await query;
+     if (error && (error.code === '42P01' || error.code === 'PGRST205')) return true; 
+     return count === 0;
+  },
+
+  // --- BACKUP / SETTINGS ---
   getSettings: (): AppSettings => {
     const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     return data ? JSON.parse(data) : {
@@ -154,38 +138,21 @@ export const dataService = {
     };
   },
 
-  saveSettings: (settings: AppSettings): void => {
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
-  },
-
-  // --- BACKUP / RESTORE ---
   createBackup: async (): Promise<string> => {
-    // Fetch all fresh data from Supabase
-    const { data: tires } = await supabase.from('tires').select('*');
-    const { data: transactions } = await supabase.from('transactions').select('*');
-    const { data: vehicles } = await supabase.from('vehicles').select('*');
-
+    const [tires, transactions, vehicles] = await Promise.all([
+        dataService.fetchTires(),
+        dataService.fetchTransactions(),
+        dataService.fetchVehicles()
+    ]);
     return JSON.stringify({ tires, transactions, vehicles, timestamp: new Date().toISOString() }, null, 2);
   },
 
   restoreBackup: async (jsonData: string): Promise<boolean> => {
     try {
       const data = JSON.parse(jsonData);
-      
-      // Batch Insert/Upsert
-      if (data.tires?.length) {
-          const { error } = await supabase.from('tires').upsert(data.tires);
-          if (error) throw error;
-      }
-      if (data.transactions?.length) {
-          const { error } = await supabase.from('transactions').upsert(data.transactions);
-          if (error) throw error;
-      }
-      if (data.vehicles?.length) {
-          const { error } = await supabase.from('vehicles').upsert(data.vehicles);
-          if (error) throw error;
-      }
-
+      if (data.tires?.length) await supabase.from('tires').upsert(data.tires);
+      if (data.transactions?.length) await supabase.from('transactions').upsert(data.transactions);
+      if (data.vehicles?.length) await supabase.from('vehicles').upsert(data.vehicles);
       return true;
     } catch (e) {
       console.error("Restore failed", e);
